@@ -562,6 +562,11 @@ function pile(ctx: BoardCtx, side: Side, zone: Zone): HTMLElement {
   const cards = side === 'me' ? game.me.zones[zone] : game.opp?.zones[zone] ?? [];
   const n = cards.length;
   const el = h('div', { class: `zone pile z-${zone}` }, zoneLabel(ZONE_LABEL[zone], n));
+  if (zone === 'waiting') {
+    // Waiting Room is public, so count climaxes for either player.
+    const cx = cards.filter((c) => cardInfoFor(game, side, c.cardId)?.isClimax).length;
+    el.firstElementChild!.append(h('span', { class: `zcount cx-count ${cx ? '' : 'none'}`, title: `${cx} climax card(s) in this Waiting Room` }, `CX ${cx}`));
+  }
   const stack = h('div', { class: 'pile-stack' });
   if (n) {
     // deck: index 0 is top; others: last is top
