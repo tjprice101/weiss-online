@@ -1,4 +1,5 @@
 import { clear, h, modal, toast } from '../util/dom';
+import { translationBox } from '../util/translate';
 import { cardInfoFor, cardVisual, DESTS, faceVisible, type BoardCtx } from './board';
 import { find, STAGE_SHORT, STAGE_ZONES, ZONE_LABEL, type Inst, type PubInst, type Zone } from './state';
 
@@ -8,13 +9,16 @@ const TOP_LAST: Zone[] = ['waiting', 'stock'];
 function zoomPanel() {
   const img = h('img', { alt: '' }) as HTMLImageElement;
   const cap = h('div', { class: 'zoom-cap' });
-  const el = h('div', { class: 'zoom-panel' }, img, cap);
+  const tr = translationBox('zoom-tr');
+  const el = h('div', { class: 'zoom-panel' }, img, cap, tr.el);
   return {
     el,
-    show(url: string | undefined, name: string) {
+    show(url: string | undefined, name: string, id?: string) {
       if (url) img.src = url;
       img.style.visibility = url ? 'visible' : 'hidden';
       cap.textContent = name;
+      if (url) tr.show(id, url);
+      else tr.clear();
     },
   };
 }
@@ -93,7 +97,7 @@ export function openZoneViewer(
         selected.delete(c.iid);
         game.move(c.iid, 'hand');
       };
-      tile.onmouseenter = () => zoom.show(inf?.url, inf?.name ?? '');
+      tile.onmouseenter = () => zoom.show(inf?.url, inf?.name ?? '', inf?.id);
       if (reorderable) {
         tile.ondragstart = (e) => e.dataTransfer!.setData('text/wom-reorder', c.iid);
         tile.ondragover = (e) => {
@@ -218,7 +222,7 @@ export function openOppViewer(ctx: BoardCtx, zone: Zone, markerHost?: string, pe
           ),
         );
       }
-      t.onmouseenter = () => vis && zoom.show(inf?.url, inf?.name ?? '');
+      t.onmouseenter = () => vis && zoom.show(inf?.url, inf?.name ?? '', inf?.id);
       grid.append(t);
     });
   };

@@ -6,6 +6,8 @@ export interface CardMeta {
   /** Image is wider than tall (climax cards usually are). Rendered rotated in portrait slots. */
   landscape: boolean;
   createdAt: number;
+  /** Library folder name; missing or empty means unfiled. */
+  folder?: string;
 }
 
 export interface DeckEntry {
@@ -26,13 +28,14 @@ export interface PreparedCard {
   hash: string;
   landscape: boolean;
   isClimax: boolean;
+  folder?: string;
 }
 
 export interface Store {
   kind: 'local';
   listCards(): Promise<CardMeta[]>;
   addCard(card: PreparedCard): Promise<CardMeta>;
-  updateCard(id: string, patch: Partial<Pick<CardMeta, 'name' | 'isClimax'>>): Promise<void>;
+  updateCard(id: string, patch: Partial<Pick<CardMeta, 'name' | 'isClimax' | 'folder'>>): Promise<void>;
   deleteCard(id: string): Promise<void>;
   getImageUrl(id: string): Promise<string>;
   getImageBlob(id: string): Promise<Blob>;

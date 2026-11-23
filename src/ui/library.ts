@@ -1,7 +1,8 @@
 import { store } from '../store';
 import type { CardMeta, Deck } from '../types';
 import { clear, confirmDialog, h, modal, promptDialog, toast } from '../util/dom';
-import { uuid } from '../util/misc';
+import { lsGet, lsSet, uuid } from '../util/misc';
+import { profileKey } from '../store';
 import { getPrefs } from '../util/prefs';
 import { cardImg, forgetUrl, showCardLarge } from './cardview';
 import { dropZone, handleUploads, pickFiles } from './uploads';
@@ -20,6 +21,21 @@ export function renderLibrary(root: HTMLElement) {
   const selected = new Set<string>();
   let anchor: string | null = null;
   let shown: CardMeta[] = [];
+  /** null = all cards, '' = unfiled, otherwise a folder name. */
+  let folder: string | null = lsGet<string | null>(profileKey('wom-lib-folder'), null);
+  const folderList = h('div', { class: 'folder-list', role: 'list', 'aria-label': 'Folders' });
+
+  // Empty folders are remembered separately; folders that hold cards come from the cards themselves.
+  const byName = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
+  const savedFolders = () => lsGet<string[]>(profileKey('wom-folders'), []);
+  const saveFolders = (f: string[]) => lsSet(profileKey('wom-folders'), [...new Set(f)].sort(byName));
+  const allFolders = () => [...new Set([...savedFolders(), ...cards.map((c) => c.folder ?? '').filter(Boolean)])].sort(byName);
+  const openFolder = (f: string | null) => {
+    folder = f;
+    lsSet(profileKey('wom-lib-folder'), f);
+    anchor = null;
+    draw();
+  };
 
   const grid = h('div', { class: 'card-grid', role: 'list', 'aria-label': 'Card library' });
   const countEl = h('span', { class: 'muted', 'aria-live': 'polite' });
@@ -68,6 +84,7 @@ export function renderLibrary(root: HTMLElement) {
     const list = cards.filter(
       (c) =>
         (!q || c.name.toLowerCase().includes(q)) &&
+        (folder === null || (c.folder ?? '') === folder) &&
         (filter === 'all' || (filter === 'unused' ? !used.has(c.id) : filter === 'climax' ? c.isClimax : !c.isClimax)),
     );
     const byName = (a: CardMeta, b: CardMeta) => a.name.localeCompare(b.name, undefined, { numeric: true });
@@ -94,7 +111,10 @@ export function renderLibrary(root: HTMLElement) {
         ),
       );
     }
+    if (!loading && cards.length && !shown.length)
+      grid.append(h('p', { class: 'muted' }, folder ? `No cards in “${folder}” yet. Drag cards onto the folder, or upload while it is open.` : 'No cards match.'));
     for (const c of shown) grid.append(tile(c));
+    drawFolders();
     grid.classList.toggle('selecting', selecting);
     selectBtn.classList.toggle('on', selecting);
     selectBtn.textContent = selecting ? '✕ Done selecting' : '☑ Select';
@@ -115,6 +135,7 @@ export function renderLibrary(root: HTMLElement) {
       h('span', { class: 'bulk-sep' }),
       h('button', { class: 'btn sm', disabled: none, onclick: () => setClimax(true) }, 'Mark climax'),
       h('button', { class: 'btn sm', disabled: none, onclick: () => setClimax(false) }, 'Mark not climax'),
+      h('button', { class: 'btn sm', disabled: none, onclick: () => moveToFolder([...selected]) }, '📁 Move to folder…'),
       h('button', { class: 'btn sm', disabled: none, onclick: addToDeck }, '＋ Add to deck…'),
       h('button', { class: 'btn sm danger', disabled: none, onclick: () => deleteMany([...selected], 'selected') }, `🗑 Delete selected${n ? ` (${n})` : ''}`),
     );
@@ -142,6 +163,7 @@ export function renderLibrary(root: HTMLElement) {
       'div',
       { class: 'tile-actions' },
       h('button', { class: 'mini', title: 'Rename', 'aria-label': `Rename ${c.name}`, onclick: (e: Event) => (e.stopPropagation(), rename(c)) }, '✎'),
+      h('button', { class: 'mini', title: c.folder ? `In folder “${c.folder}”. Move…` : 'Move to a folder', 'aria-label': `Move ${c.name} to a folder`, onclick: (e: Event) => (e.stopPropagation(), moveToFolder([c.id])) }, '📁'),
       h('button', { class: `mini ${c.isClimax ? 'on' : ''}`, title: 'Toggle climax', 'aria-label': `Toggle climax for ${c.name}`, onclick: (e: Event) => (e.stopPropagation(), toggleClimax(c)) }, 'CX'),
       h('button', { class: 'mini danger', title: 'Delete', 'aria-label': `Delete ${c.name}`, onclick: (e: Event) => (e.stopPropagation(), del(c)) }, '🗑'),
     );
@@ -161,6 +183,15 @@ export function renderLibrary(root: HTMLElement) {
         'data-id': c.id,
         'aria-label': c.name + (c.isClimax ? ', climax' : '') + (selecting ? (isSel ? ', selected' : ', not selected') : ''),
         onclick: activate,
+        draggable: 'true',
+        ondragstart: (e: DragEvent) => {
+          // Dragging a selected card drags the whole selection.
+          const ids = selected.has(c.id) ? [...selected] : [c.id];
+          e.dataTransfer!.setData('text/wom-cards', JSON.stringify(ids));
+          e.dataTransfer!.effectAllowed = 'move';
+          document.body.classList.add('dragging-cards');
+        },
+        ondragend: () => document.body.classList.remove('dragging-cards'),
         onkeydown: (e: KeyboardEvent) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -173,6 +204,7 @@ export function renderLibrary(root: HTMLElement) {
       c.isClimax ? h('span', { class: 'badge cx' }, 'CLIMAX') : null,
       !used.has(c.id) && !loading ? h('span', { class: 'badge unused', title: 'Not in any deck' }, 'unused') : null,
       h('div', { class: 'tile-name' }, c.name),
+      folder === null && c.folder ? h('div', { class: 'tile-folder' }, '📁 ' + c.folder) : null,
       selecting ? null : actions,
     );
   }
@@ -236,6 +268,153 @@ export function renderLibrary(root: HTMLElement) {
     await load();
   }
 
+  function drawFolders() {
+    clear(folderList);
+    const counts = new Map<string, number>();
+    for (const c of cards) counts.set(c.folder ?? '', (counts.get(c.folder ?? '') ?? 0) + 1);
+    const item = (f: string | null, label: string, n: number, extra?: HTMLElement) => {
+      const el = h(
+        'div',
+        {
+          class: `folder-item ${folder === f ? 'active' : ''}`,
+          role: 'listitem',
+          tabindex: '0',
+          title: f === null ? 'Every card' : f === '' ? 'Cards not in any folder. Drop cards here to unfile them.' : `Folder “${f}”. Drop cards here to move them.`,
+          onclick: () => openFolder(f),
+          onkeydown: (e: KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              openFolder(f);
+            }
+          },
+        },
+        h('span', { class: 'folder-name' }, label),
+        h('span', { class: 'folder-count' }, String(n)),
+        extra ?? null,
+      );
+      if (f !== null) {
+        el.addEventListener('dragover', (e) => {
+          if (!e.dataTransfer?.types.includes('text/wom-cards')) return;
+          e.preventDefault();
+          el.classList.add('drop-over');
+        });
+        el.addEventListener('dragleave', () => el.classList.remove('drop-over'));
+        el.addEventListener('drop', (e) => {
+          el.classList.remove('drop-over');
+          const raw = e.dataTransfer?.getData('text/wom-cards');
+          if (!raw) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setFolder(JSON.parse(raw) as string[], f);
+        });
+      }
+      return el;
+    };
+    folderList.append(item(null, '🗂 All cards', cards.length), item('', '📄 Unfiled', counts.get('') ?? 0));
+    for (const f of allFolders()) {
+      const tools = h(
+        'span',
+        { class: 'folder-tools' },
+        h('button', { class: 'mini', title: 'Rename folder', 'aria-label': `Rename folder ${f}`, onclick: (e: Event) => (e.stopPropagation(), renameFolder(f)) }, '✎'),
+        h('button', { class: 'mini danger', title: 'Delete folder', 'aria-label': `Delete folder ${f}`, onclick: (e: Event) => (e.stopPropagation(), deleteFolder(f)) }, '🗑'),
+      );
+      folderList.append(item(f, '📁 ' + f, counts.get(f) ?? 0, tools));
+    }
+    folderList.append(h('button', { class: 'btn sm folder-new', onclick: () => newFolder().then((f) => f && openFolder(f)) }, '＋ New folder'));
+  }
+
+  async function newFolder(): Promise<string | null> {
+    const name = (await promptDialog('New folder name', '', 'Create'))?.trim();
+    if (!name) return null;
+    const existing = allFolders().find((f) => f.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      toast('A folder with that name already exists', 'warn');
+      return existing;
+    }
+    saveFolders([...savedFolders(), name]);
+    drawFolders();
+    return name;
+  }
+
+  async function setFolder(ids: string[], f: string) {
+    const s = store();
+    const targets = cards.filter((c) => ids.includes(c.id) && (c.folder ?? '') !== f);
+    await Promise.all(targets.map((c) => s.updateCard(c.id, { folder: f }).then(() => (c.folder = f || undefined))));
+    if (f) saveFolders([...savedFolders(), f]);
+    toast(`Moved ${targets.length} card(s) to ${f ? `“${f}”` : 'Unfiled'}`, 'ok');
+    selected.clear();
+    draw();
+  }
+
+  function moveToFolder(ids: string[]) {
+    if (!ids.length) return;
+    const pick = (f: string) => (m.close(), setFolder(ids, f));
+    const m = modal({
+      title: `Move ${ids.length} card(s) to…`,
+      body: h(
+        'div',
+        { class: 'stack' },
+        ...allFolders().map((f) => h('button', { class: 'btn', onclick: () => pick(f) }, '📁 ' + f)),
+        h('button', { class: 'btn', onclick: () => pick('') }, '📄 Unfiled (no folder)'),
+        h('button', {
+          class: 'btn primary',
+          onclick: async () => {
+            m.close();
+            const f = await newFolder();
+            if (f) await setFolder(ids, f);
+          },
+        }, '＋ New folder…'),
+      ),
+    });
+  }
+
+  async function renameFolder(old: string) {
+    const name = (await promptDialog(`Rename folder “${old}”`, old, 'Rename'))?.trim();
+    if (!name || name === old) return;
+    const s = store();
+    const inIt = cards.filter((c) => c.folder === old);
+    await Promise.all(inIt.map((c) => s.updateCard(c.id, { folder: name }).then(() => (c.folder = name))));
+    saveFolders([...savedFolders().filter((f) => f !== old), name]);
+    if (folder === old) openFolder(name);
+    else draw();
+  }
+
+  function deleteFolder(f: string) {
+    const inIt = cards.filter((c) => c.folder === f);
+    const forget = () => {
+      saveFolders(savedFolders().filter((x) => x !== f));
+      if (folder === f) openFolder(null);
+      else draw();
+    };
+    if (!inIt.length) return forget();
+    const m = modal({
+      title: `Delete folder “${f}”`,
+      body: h(
+        'div',
+        { class: 'stack' },
+        h('p', null, `This folder has ${inIt.length} card(s).`),
+        h('button', {
+          class: 'btn',
+          onclick: async () => {
+            m.close();
+            const s = store();
+            await Promise.all(inIt.map((c) => s.updateCard(c.id, { folder: '' }).then(() => (c.folder = undefined))));
+            toast(`Folder deleted; ${inIt.length} card(s) moved to Unfiled`, 'ok');
+            forget();
+          },
+        }, 'Delete the folder, keep the cards (move to Unfiled)'),
+        h('button', {
+          class: 'btn danger',
+          onclick: async () => {
+            m.close();
+            await deleteMany(inIt.map((c) => c.id), `“${f}”`);
+            forget();
+          },
+        }, `Delete the folder AND its ${inIt.length} card(s)`),
+      ),
+    });
+  }
+
   async function addToDeck() {
     const s = store();
     const decks = await s.listDecks();
@@ -269,7 +448,8 @@ export function renderLibrary(root: HTMLElement) {
 
   async function upload(files: File[]) {
     if (!files.length) return;
-    const r = await handleUploads(files);
+    // Loose images go into the open folder.
+    const r = await handleUploads(files, { folder: folder || undefined });
     if (r.cards.length) await load();
   }
 
@@ -330,8 +510,12 @@ export function renderLibrary(root: HTMLElement) {
       'Every card you upload is kept here and can be reused in any deck. A .zip import adds its images here and also creates a deck. Landscape images are tagged as climax cards automatically; click CX to change that. Shortcuts: S select, Ctrl+A select all, Delete removes selected, / search.',
     ),
     toolbar,
-    bulkBar,
-    grid,
+    h(
+      'div',
+      { class: 'lib-layout' },
+      h('aside', { class: 'lib-folders' }, h('div', { class: 'side-title' }, 'Folders'), folderList),
+      h('div', { class: 'lib-main' }, bulkBar, grid),
+    ),
   );
   root.append(page);
   const undrop = dropZone(page, upload);

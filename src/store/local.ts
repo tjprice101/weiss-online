@@ -12,6 +12,7 @@ const toMeta = (r: CardRow): CardMeta => ({
   isClimax: r.isClimax,
   landscape: r.landscape,
   createdAt: r.createdAt,
+  ...(r.folder ? { folder: r.folder } : {}),
 });
 
 /** Browser-only storage (IndexedDB). Card id === sha256 of the original file. */
@@ -45,15 +46,18 @@ export class LocalStore implements Store {
       landscape: c.landscape,
       blob: c.blob,
       createdAt: Date.now(),
+      ...(c.folder ? { folder: c.folder } : {}),
     };
     await this.db.put('cards', row);
     return toMeta(row);
   }
 
-  async updateCard(id: string, patch: Partial<Pick<CardMeta, 'name' | 'isClimax'>>) {
+  async updateCard(id: string, patch: Partial<Pick<CardMeta, 'name' | 'isClimax' | 'folder'>>) {
     const row = await this.db.get<CardRow>('cards', id);
     if (!row) return;
-    await this.db.put('cards', { ...row, ...patch });
+    const next: CardRow = { ...row, ...patch };
+    if (!next.folder) delete next.folder;
+    await this.db.put('cards', next);
   }
 
   async deleteCard(id: string) {

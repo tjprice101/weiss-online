@@ -3,6 +3,16 @@ import { exportBackup, importBackup } from '../store/backup';
 import { confirmDialog, h, promptDialog, toast } from '../util/dom';
 import { pickFiles } from './uploads';
 import { getPrefs, setPref, type Prefs } from '../util/prefs';
+import {
+  clearTranslations,
+  getApiKey,
+  getTranslateSettings,
+  setApiKey,
+  setTranslateSettings,
+  translationCount,
+  TRANSLATE_MODELS,
+  type TranslateModel,
+} from '../util/translate';
 
 export function renderAccount(root: HTMLElement) {
   const p = currentProfile();
@@ -74,9 +84,61 @@ export function renderAccount(root: HTMLElement) {
     ),
   );
 
+  // ── card translation (per browser)
+  const tset = getTranslateSettings();
+  const keyIn = h('input', { class: 'input', type: 'password', placeholder: getApiKey() ? 'Key saved (enter a new one to replace it)' : 'sk-ant-…', autocomplete: 'off' }) as HTMLInputElement;
+  const modelSel = h('select', { class: 'input' }, TRANSLATE_MODELS.map((m) => h('option', { value: m.id }, m.label))) as HTMLSelectElement;
+  modelSel.value = tset.model;
+  modelSel.onchange = () => setTranslateSettings({ model: modelSel.value as TranslateModel });
+  const autoBox = h('input', { type: 'checkbox', checked: tset.auto }) as HTMLInputElement;
+  autoBox.onchange = () => setTranslateSettings({ auto: autoBox.checked });
+  const keyStatus = h('span', { class: 'muted small' });
+  const clearBtn = h('button', { class: 'btn sm' }) as HTMLButtonElement;
+  const refreshTr = () => {
+    keyStatus.textContent = getApiKey() ? '✓ API key saved in this browser' : 'No API key saved';
+    clearBtn.textContent = `Clear saved translations (${translationCount()})`;
+    clearBtn.disabled = !translationCount();
+  };
+  clearBtn.onclick = () => (clearTranslations(), refreshTr(), toast('Saved translations cleared', 'ok'));
+  refreshTr();
+  const translation = h('div', { class: 'card-panel stack' },
+    h('h3', null, 'Card translation'),
+    h('p', { class: 'muted' }, 'Hover a card that isn’t in English and an English translation of its name, traits and abilities appears under the enlarged card: in games, in the Library and Deck Builder, and in look/search windows. Each card is translated once and saved in this browser.'),
+    h('p', { class: 'muted small' }, 'This uses Claude through your own Anthropic API key (create one at console.anthropic.com). When a card is translated, its image is sent to Anthropic and the request is billed to your API account. The key is kept only in this browser and is sent only to Anthropic.'),
+    h('label', null, 'Anthropic API key'),
+    h('div', { class: 'row' },
+      keyIn,
+      h('button', {
+        class: 'btn primary',
+        onclick: () => {
+          if (!keyIn.value.trim()) return toast('Paste your API key first', 'warn');
+          setApiKey(keyIn.value);
+          keyIn.value = '';
+          keyIn.placeholder = 'Key saved (enter a new one to replace it)';
+          refreshTr();
+          toast('API key saved', 'ok');
+        },
+      }, 'Save key'),
+      h('button', {
+        class: 'btn danger',
+        onclick: () => {
+          setApiKey('');
+          keyIn.placeholder = 'sk-ant-…';
+          refreshTr();
+          toast('API key removed', 'ok');
+        },
+      }, 'Remove'),
+    ),
+    keyStatus,
+    h('label', null, 'Model'),
+    modelSel,
+    h('label', { class: 'pref-row' }, autoBox, h('span', null, h('b', null, 'Translate automatically on hover'), h('span', { class: 'muted small' }, 'Off: a “Translate this card” button appears instead, so nothing is sent until you click it.'))),
+    h('div', { class: 'row' }, clearBtn),
+  );
+
   // ── backup
   const progress = h('div', { class: 'muted' });
-  page.append(accessibility);
+  page.append(accessibility, translation);
   page.append(
     h('div', { class: 'card-panel stack' },
       h('h3', null, 'Backup & move to another device'),

@@ -31,6 +31,16 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
   let selected: Deck | null = null;
   let pickerQuery = '';
   let pickerFilter: 'all' | 'climax' | 'other' = 'all';
+  /** '*' = all folders, '' = unfiled. */
+  let pickerFolder = '*';
+  const pickerMatches = (c: CardMeta) => {
+    const q = pickerQuery.trim().toLowerCase();
+    return (
+      (!q || c.name.toLowerCase().includes(q)) &&
+      (pickerFolder === '*' || (c.folder ?? '') === pickerFolder) &&
+      (pickerFilter === 'all' || (pickerFilter === 'climax' ? c.isClimax : !c.isClimax))
+    );
+  };
 
   const list = h('div', { class: 'deck-list' });
   const editor = h('div', { class: 'deck-editor' });
@@ -202,6 +212,7 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
       const shown = src.filter(
         (c) =>
           (!q || c.name.toLowerCase().includes(q)) &&
+          (pickerFolder === '*' || (c.folder ?? '') === pickerFolder) &&
           (pickerFilter === 'all' || (pickerFilter === 'climax' ? c.isClimax : !c.isClimax)),
       );
       if (!shown.length) pickerGrid.append(h('p', { class: 'muted' }, 'No cards. Upload some images first.'));
@@ -240,6 +251,17 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
     ) as HTMLSelectElement;
     filterSel.value = pickerFilter;
     filterSel.onchange = () => ((pickerFilter = filterSel.value as typeof pickerFilter), drawPicker());
+    const folders = [...new Set(library.map((c) => c.folder ?? '').filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    if (pickerFolder !== '*' && pickerFolder !== '' && !folders.includes(pickerFolder)) pickerFolder = '*';
+    const folderSel = h(
+      'select',
+      { class: 'input narrow', 'aria-label': 'Folder', title: 'Show cards from one folder' },
+      h('option', { value: '*' }, '📁 All folders'),
+      h('option', { value: '' }, 'Unfiled'),
+      ...folders.map((f) => h('option', { value: f }, f)),
+    ) as HTMLSelectElement;
+    folderSel.value = pickerFolder;
+    folderSel.onchange = () => ((pickerFolder = folderSel.value), drawPicker());
 
     const pickerTabs = h(
       'div',
@@ -247,14 +269,14 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
       h('span', { class: 'tab active' }, 'My Library'),
       h('div', { class: 'spacer' }),
       search,
+      folderSel,
       filterSel,
       h('button', {
         class: 'btn',
         title: 'Add one copy of every card currently shown (after searching / filtering)',
         onclick: () => {
           if (!selected) return;
-          const q = pickerQuery.trim().toLowerCase();
-          const shown = library.filter((c) => (!q || c.name.toLowerCase().includes(q)) && (pickerFilter === 'all' || (pickerFilter === 'climax' ? c.isClimax : !c.isClimax)));
+          const shown = library.filter(pickerMatches);
           for (const c of shown) {
             const e = selected.cards.find((x) => x.cardId === c.id);
             if (e) e.count++;

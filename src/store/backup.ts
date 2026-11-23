@@ -49,7 +49,7 @@ export async function importBackup(file: File, progress?: (msg: string) => void)
     const data = zip[c.file];
     if (!data) continue;
     const type = c.file.endsWith('.png') ? 'image/png' : c.file.endsWith('.jpg') ? 'image/jpeg' : 'image/webp';
-    const meta = await s.addCard({ blob: new Blob([data as BlobPart], { type }), name: c.name, hash: c.hash, landscape: c.landscape, isClimax: c.isClimax });
+    const meta = await s.addCard({ blob: new Blob([data as BlobPart], { type }), name: c.name, hash: c.hash, landscape: c.landscape, isClimax: c.isClimax, folder: c.folder });
     idMap.set(c.id, meta.id);
   }
   for (const d of m.decks) {

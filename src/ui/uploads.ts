@@ -1,5 +1,5 @@
 import { store } from '../store';
-import { DECK_SIZE, deckTotal, type CardMeta, type Deck } from '../types';
+import { DECK_SIZE, deckTotal, type CardMeta, type Deck, type Store } from '../types';
 import { h, modal, toast } from '../util/dom';
 import { deckFromMetas, filesToRaw, importImages, isImage, isZip, readZip } from '../library/importer';
 
@@ -13,7 +13,11 @@ export interface UploadResult {
  *  - image files → added to the library as individual cards
  *  - .zip files  → every image added to the library AND a deck is created from the zip
  */
-export async function handleUploads(files: File[], opts: { zipAsDeck?: boolean } = {}): Promise<UploadResult> {
+/**
+ * Import images and deck zips. Loose images go into `opts.folder` (if any); each zip's cards go into
+ * a folder named after the zip, unless they were already filed somewhere.
+ */
+export async function handleUploads(files: File[], opts: { zipAsDeck?: boolean; folder?: string } = {}): Promise<UploadResult> {
   const zipAsDeck = opts.zipAsDeck ?? true;
   const images = files.filter(isImage);
   const zips = files.filter(isZip);
@@ -27,6 +31,7 @@ export async function handleUploads(files: File[], opts: { zipAsDeck?: boolean }
   try {
     if (images.length) {
       const metas = await importImages(s, await filesToRaw(images), (d, t) => (status.textContent = `Importing images ${d}/${t}…`));
+      if (opts.folder) await fileInto(s, metas, opts.folder);
       result.cards.push(...metas);
     }
     for (const z of zips) {
@@ -37,6 +42,7 @@ export async function handleUploads(files: File[], opts: { zipAsDeck?: boolean }
         continue;
       }
       const metas = await importImages(s, raw, (d, t) => (status.textContent = `${z.name}: ${d}/${t}…`));
+      await fileInto(s, metas, opts.folder || z.name.replace(/\.zip$/i, '').trim());
       result.cards.push(...metas);
       if (zipAsDeck) {
         const deck = await s.saveDeck(deckFromMetas(z.name.replace(/\.zip$/i, ''), metas));
@@ -55,6 +61,16 @@ export async function handleUploads(files: File[], opts: { zipAsDeck?: boolean }
   }
   if (result.decks.length) showDeckImportSummary(result.decks);
   return result;
+}
+
+/** Put cards that aren't in a folder yet into `folder`. */
+async function fileInto(s: Store, metas: CardMeta[], folder: string) {
+  if (!folder) return;
+  for (const m of metas) {
+    if (m.folder) continue;
+    await s.updateCard(m.id, { folder });
+    m.folder = folder;
+  }
 }
 
 function showDeckImportSummary(decks: Deck[]) {

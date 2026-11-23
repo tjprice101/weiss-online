@@ -1,6 +1,6 @@
 import { displayName, profileKey, renameProfile, store } from '../store';
 import { deckTotal, DECK_SIZE, type CardMeta, type Deck } from '../types';
-import { clear, h, toast } from '../util/dom';
+import { clear, confirmDialog, h, toast } from '../util/dom';
 import { lsGet } from '../util/misc';
 import { autosaveKey, Game, type CardInfo, type SavedGame } from '../game/game';
 import { Net, randomRoomCode } from '../game/net';
@@ -151,10 +151,23 @@ export function renderPlay(root: HTMLElement) {
 
   const save = lsGet<SavedGame | null>(autosaveKey(), null);
   if (save?.me) {
+    const z = save.me.zones;
+    const summary = `Turn ${save.meta?.turnNo ?? 1} · Level ${z.level?.length ?? 0} · Clock ${z.clock?.length ?? 0} · Deck ${z.deck?.length ?? 0}`;
+    const endGame = async () => {
+      if (!(await confirmDialog(`End your solo game with "${save.deckName}"? The saved board is deleted and can't be resumed.`, 'End game'))) return;
+      localStorage.removeItem(autosaveKey());
+      clear(resumeBox);
+      toast('Game ended', 'ok');
+    };
     resumeBox.append(
       h('div', { class: 'card-panel resume' },
-        h('div', null, h('b', null, 'Resume last game'), h('div', { class: 'muted' }, `${save.deckName} · saved ${new Date(save.savedAt).toLocaleString()}`)),
-        h('button', { class: 'btn play-btn', onclick: () => resume(save) }, '▶ Resume (solo)'),
+        h('div', { class: 'grow' },
+          h('b', null, 'Ongoing game'),
+          h('div', { class: 'muted' }, `Solo · ${save.deckName} · ${summary}`),
+          h('div', { class: 'muted small' }, `Saved ${new Date(save.savedAt).toLocaleString()}`),
+        ),
+        h('button', { class: 'btn primary play-btn', onclick: () => resume(save) }, '▶ Resume'),
+        h('button', { class: 'btn danger', title: 'End this game and delete its save', 'aria-label': 'End this game', onclick: endGame }, '✕ End game'),
       ),
     );
   }

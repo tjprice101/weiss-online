@@ -9,8 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.12.0",
     "fflate": "^0.8.3",
-    "peerjs": "^1.5.5"
+    "peerjs": "^1.5.5",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

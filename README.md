@@ -20,7 +20,7 @@ The mat does **not** enforce rules or script card effects. It assumes both playe
 - **Look / search viewer:** select cards (click order is kept), send them anywhere (including **as markers under a character**), drag to reorder, then choose where the rest go (top, bottom, Waiting Room, stock, clock, shuffle). Optionally reveal them to your opponent.
 - **Damage helper:** flips cards one at a time into the Resolution Zone and stops automatically at a card tagged as a climax. Then one click sends them to the Waiting Room (cancelled) or to the Clock.
 - **Drag & drop** everywhere. Shift+drop on a character adds a marker; Shift+drop on the deck puts the card on the bottom.
-- Undo (Ctrl+Z), game log, chat, phase/turn tracker, coin flip, d6, and a solo autosave you can resume.
+- Undo (Ctrl+Z), game log, chat, phase/turn tracker, coin flip, d6, and a solo autosave you can resume or end from the Play page.
 - **Cards size themselves to fill the window.** Your opponent's side is drawn slightly smaller so yours can be bigger. Turn controls and both Resolution Zones sit in a column on the left. ⚙ → Card size goes above 100% if you want even bigger cards (the board then scrolls).
 - The sidebar shows a large copy of whatever card you hover.
 
@@ -41,8 +41,14 @@ The mat does **not** enforce rules or script card effects. It assumes both playe
 - Hover any card in the Library or Deck Builder to see it enlarged at the side of the screen.
 - **Bulk actions in the Library:** ☑ Select (or Ctrl/Shift+click) to pick cards, Shift+click for a range, Ctrl+A for everything shown. Then delete, mark as climax / not climax, or add them to a deck (1–4 copies each). **Clean up…** deletes cards not in any deck, everything matching the current filter, or the whole library. Large deletes ask you to type DELETE.
 - Sort by name or upload date, and filter to cards not in any deck.
+- **Folders:** a folder list beside the Library. A `.zip` import goes into a folder named after the zip. Create, rename and delete folders, and drag cards (or a whole selection) onto a folder, or use **📁 Move to folder…**. Images uploaded while a folder is open go into it. Deleting a folder can keep its cards (they move to Unfiled) or delete them too. The Deck Builder can filter its library by folder.
 - Landscape images are tagged as **climax** automatically; you can toggle this per card.
 - Export any deck back out as a `.zip`.
+
+### Card translation
+- Hover a card that isn't in English and an English translation of its name, traits and abilities appears under the enlarged card: in games, in the Library and Deck Builder, and in look/search windows.
+- Uses Claude (vision) through **your own Anthropic API key**, entered in **Account → Card translation**. The key stays in your browser and is sent only to Anthropic. Each card image is sent once; the translation is saved in the browser and reused.
+- Choose the model (Claude Opus 5.5 by default, or Sonnet 5.5 / Haiku 5.5 to spend less), and turn off automatic translation to get a **Translate this card** button instead.
 
 ### Accessibility
 - **Account → Accessibility & display:** larger text and buttons, high contrast, reduce motion (on by default if your system asks for it), turn the hover preview on or off, and skip the confirmation for single deletes.
