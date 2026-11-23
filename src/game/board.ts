@@ -678,7 +678,7 @@ function middleStrip(ctx: BoardCtx): HTMLElement {
   );
   const oppRes = game.mode !== 'solo' ? h('div', { class: 'res-wrap opp' }, spread(ctx, 'opp', 'resolution')) : h('div', { class: 'res-wrap opp' });
   const myRes = h('div', { class: 'res-wrap me' }, spread(ctx, 'me', 'resolution'));
-  return h('div', { class: 'strip' }, oppRes, center, myRes);
+  return h('div', { class: `strip ${game.mode === 'solo' ? 'solo' : ''}` }, oppRes, center, myRes);
 }
 
 function oppHand(ctx: BoardCtx): HTMLElement {
@@ -703,7 +703,7 @@ function myHand(ctx: BoardCtx): HTMLElement {
 export function renderBoard(root: HTMLElement, ctx: BoardCtx) {
   const { game } = ctx;
   clear(root);
-  const oppSide = game.mode === 'solo' || !game.opp ? h('div', { class: 'side opp placeholder' }, h('div', { class: 'placeholder-msg' }, game.mode === 'solo' ? 'Solo practice: no opponent' : statusText(game))) : sideEl(ctx, 'opp');
+  const oppSide = game.mode === 'solo' || !game.opp ? h('div', { class: `side opp placeholder ${game.mode === 'solo' ? 'solo' : ''}` }, h('div', { class: 'placeholder-msg' }, game.mode === 'solo' ? 'Solo practice: no opponent' : statusText(game))) : sideEl(ctx, 'opp');
   root.append(
     oppHand(ctx),
     revealedStrip(ctx, 'opp') ?? '',

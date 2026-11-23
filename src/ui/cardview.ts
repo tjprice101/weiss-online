@@ -1,6 +1,7 @@
 import type { CardMeta } from '../types';
 import { store } from '../store';
 import { h, modal } from '../util/dom';
+import { getPrefs } from '../util/prefs';
 
 const urlCache = new Map<string, string>();
 
@@ -17,7 +18,7 @@ const hover = (() => {
     el?.classList.remove('show');
   };
   const show = (frame: HTMLElement, src: string, name: string, landscape: boolean, x: number) => {
-    if (!matchMedia('(hover: hover) and (min-width: 900px)').matches) return;
+    if (!getPrefs().hoverPreview || !matchMedia('(hover: hover) and (min-width: 900px)').matches) return;
     if (!el) {
       img = h('img', { alt: '' }) as HTMLImageElement;
       cap = h('div', { class: 'hover-cap' });

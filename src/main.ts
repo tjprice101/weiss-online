@@ -10,6 +10,7 @@ import { renderPlay, setStartGame } from './ui/play';
 import { clearUrlCache } from './ui/cardview';
 import { mountGame } from './game/screen';
 import { installMenus } from './game/menu';
+import { applyPrefs } from './util/prefs';
 
 const app = document.getElementById('app')!;
 
@@ -83,6 +84,7 @@ onProfileChange(() => {
   showShell('play');
 });
 
+applyPrefs();
 installMenus();
 restoreSession();
 shownProfile = currentProfile()?.id ?? null;

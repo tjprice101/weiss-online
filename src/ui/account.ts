@@ -2,6 +2,7 @@ import { changePassword, currentProfile, deleteCurrentProfile, hasPassword, rena
 import { exportBackup, importBackup } from '../store/backup';
 import { confirmDialog, h, promptDialog, toast } from '../util/dom';
 import { pickFiles } from './uploads';
+import { getPrefs, setPref, type Prefs } from '../util/prefs';
 
 export function renderAccount(root: HTMLElement) {
   const p = currentProfile();
@@ -10,6 +11,23 @@ export function renderAccount(root: HTMLElement) {
   root.append(page);
 
   const err = (e: unknown) => toast((e as Error).message, 'error', 5000);
+
+  // ── accessibility & display (per browser, shared by all profiles)
+  const prefs = getPrefs();
+  const opt = (key: keyof Prefs, label: string, hint: string) => {
+    const box = h('input', { type: 'checkbox', checked: prefs[key] }) as HTMLInputElement;
+    box.onchange = () => setPref(key, box.checked);
+    return h('label', { class: 'pref-row' }, box, h('span', null, h('b', null, label), h('span', { class: 'muted small' }, hint)));
+  };
+  const accessibility = h('div', { class: 'card-panel stack' },
+    h('h3', null, 'Accessibility & display'),
+    opt('largeUi', 'Larger text and buttons', 'Scales up the Library, Decks, Play and Account pages and dialogs.'),
+    opt('highContrast', 'High contrast', 'Brighter text, stronger borders and focus outlines.'),
+    opt('reduceMotion', 'Reduce motion', 'Turns off animations and sliding effects.'),
+    opt('hoverPreview', 'Enlarged card on hover', 'Shows a big copy of a card at the side of the screen when you hover it in the Library or Deck Builder.'),
+    opt('confirmDeletes', 'Ask before deleting one card or deck', 'Bulk deletes (Delete all, Delete selected) always ask.'),
+    h('p', { class: 'muted small' }, 'In a game: ⚙ Settings has the card size slider. Keyboard: D draw, N next phase, T trigger check, Ctrl+Z undo. Library: S select, Ctrl+A select all, Delete removes selected, / search. Tab moves between cards; Enter opens or adds them.'),
+  );
 
   // ── profile
   const nameIn = h('input', { class: 'input', value: p.name, maxlength: 40 }) as HTMLInputElement;
@@ -58,6 +76,7 @@ export function renderAccount(root: HTMLElement) {
 
   // ── backup
   const progress = h('div', { class: 'muted' });
+  page.append(accessibility);
   page.append(
     h('div', { class: 'card-panel stack' },
       h('h3', null, 'Backup & move to another device'),

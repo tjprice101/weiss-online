@@ -3,6 +3,7 @@ import { store } from '../store';
 import { DECK_SIZE, MAX_CLIMAX, MAX_COPIES, deckTotal, type CardMeta, type Deck } from '../types';
 import { clear, confirmDialog, h, promptDialog, toast } from '../util/dom';
 import { debounce, uuid } from '../util/misc';
+import { getPrefs } from '../util/prefs';
 import { cardImg, showCardLarge } from './cardview';
 import { dropZone, handleUploads, pickFiles } from './uploads';
 
@@ -88,6 +89,10 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
       ),
     );
     if (!decks.length) list.append(h('p', { class: 'muted' }, 'No decks yet.'));
+    else
+      list.append(
+        h('button', { class: 'btn sm danger deck-del-all', onclick: deleteAllDecks, title: 'Delete every deck (cards stay in your library)' }, `🗑 Delete all decks (${decks.length})`),
+      );
     for (const d of decks) {
       const n = deckTotal(d);
       const warn = deckWarnings(d, metas).length > 0;
@@ -153,6 +158,7 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
       h('div', { class: 'spacer' }),
       h('button', { class: 'btn', onclick: () => exportZip(d) }, '⬇ Export .zip'),
       h('button', { class: 'btn', onclick: duplicate }, '⧉ Duplicate'),
+      h('button', { class: 'btn', disabled: !d.cards.length, onclick: clearDeck, title: 'Remove every card from this deck' }, '⌫ Clear deck'),
       h('button', { class: 'btn danger', onclick: delDeck }, '🗑 Delete'),
     );
 
@@ -167,7 +173,7 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
       const mb = metas.get(b.cardId);
       return Number(!!ma?.isClimax) - Number(!!mb?.isClimax) || (ma?.name ?? '').localeCompare(mb?.name ?? '');
     });
-    if (!entries.length) contents.append(h('p', { class: 'muted' }, 'Click cards in the library below to add them. Right-click a card to remove one copy.'));
+    if (!entries.length) contents.append(h('p', { class: 'muted' }, 'Click cards in the library below to add them. Shift+click adds 4 copies, right-click removes one, Shift+right-click removes all.'));
     for (const e of entries) {
       const m = metas.get(e.cardId) ?? { id: e.cardId, name: '(missing card)', landscape: false, isClimax: false, hash: '', createdAt: 0 };
       contents.append(
@@ -176,9 +182,10 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
           { class: 'deck-card', title: m.name },
           h('div', { onclick: () => showCardLarge(m as CardMeta) }, cardImg(m)),
           h('div', { class: 'qty' },
-            h('button', { class: 'mini', onclick: () => setCount(e.cardId, e.count - 1) }, '−'),
+            h('button', { class: 'mini', 'aria-label': `Remove one ${m.name}`, onclick: () => setCount(e.cardId, e.count - 1) }, '−'),
             h('b', null, e.count),
-            h('button', { class: 'mini', onclick: () => setCount(e.cardId, e.count + 1) }, '+'),
+            h('button', { class: 'mini', 'aria-label': `Add one ${m.name}`, onclick: () => setCount(e.cardId, e.count + 1) }, '+'),
+            h('button', { class: 'mini danger', title: 'Remove all copies', 'aria-label': `Remove all ${m.name}`, onclick: () => setCount(e.cardId, 0) }, '✕'),
           ),
           h('div', { class: 'tile-name' }, m.name),
         ),
@@ -204,9 +211,16 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
           'div',
           {
             class: `tile pick ${n ? 'in-deck' : ''}`,
-            title: `${c.name}\nClick: add a copy · Right-click: remove a copy`,
-            onclick: () => setCount(c.id, n + 1),
-            oncontextmenu: (ev: Event) => (ev.preventDefault(), n && setCount(c.id, n - 1)),
+            title: `${c.name}\nClick: add a copy · Shift+click: add 4 · Right-click: remove a copy · Shift+right-click: remove all`,
+            tabindex: 0,
+            role: 'button',
+            'aria-label': `${c.name}${n ? `, ${n} in deck` : ''}. Enter adds a copy, Delete removes one.`,
+            onclick: (ev: MouseEvent) => setCount(c.id, ev.shiftKey ? Math.max(n, MAX_COPIES) : n + 1),
+            oncontextmenu: (ev: MouseEvent) => (ev.preventDefault(), n && setCount(c.id, ev.shiftKey ? 0 : n - 1)),
+            onkeydown: (ev: KeyboardEvent) => {
+              if (ev.key === 'Enter' || ev.key === ' ' || ev.key === '+') (ev.preventDefault(), setCount(c.id, n + 1));
+              else if ((ev.key === 'Delete' || ev.key === 'Backspace' || ev.key === '-') && n) (ev.preventDefault(), setCount(c.id, n - 1));
+            },
           },
           cardImg(c),
           n ? h('span', { class: 'badge qty-badge' }, `×${n}`) : null,
@@ -234,6 +248,24 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
       h('div', { class: 'spacer' }),
       search,
       filterSel,
+      h('button', {
+        class: 'btn',
+        title: 'Add one copy of every card currently shown (after searching / filtering)',
+        onclick: () => {
+          if (!selected) return;
+          const q = pickerQuery.trim().toLowerCase();
+          const shown = library.filter((c) => (!q || c.name.toLowerCase().includes(q)) && (pickerFilter === 'all' || (pickerFilter === 'climax' ? c.isClimax : !c.isClimax)));
+          for (const c of shown) {
+            const e = selected.cards.find((x) => x.cardId === c.id);
+            if (e) e.count++;
+            else selected.cards.push({ cardId: c.id, count: 1 });
+          }
+          saveSoon(selected);
+          drawList();
+          drawEditor();
+          toast(`Added ${shown.length} card(s)`, 'ok');
+        },
+      }, '＋1 each shown'),
       h('button', {
         class: 'btn',
         title: 'Upload card images into your library',
@@ -267,9 +299,31 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
     await load(d.id);
   }
 
+  async function clearDeck() {
+    if (!selected || !selected.cards.length) return;
+    if (!(await confirmDialog(`Remove all ${deckTotal(selected)} cards from "${selected.name}"? Cards stay in your library.`, 'Clear deck'))) return;
+    selected.cards = [];
+    saveSoon(selected);
+    drawList();
+    drawEditor();
+  }
+
+  async function deleteAllDecks() {
+    const typed = await promptDialog(`Delete all ${decks.length} decks? Cards stay in your library. This cannot be undone.\n\nType DELETE to confirm.`, '', 'Delete all');
+    if (typed == null) return;
+    if (typed.trim().toUpperCase() !== 'DELETE') return toast('Not deleted: you must type DELETE', 'warn');
+    for (const d of decks) {
+      saveSoon.cancel(d.id);
+      await store().deleteDeck(d.id);
+    }
+    toast(`Deleted ${decks.length} deck(s)`, 'ok');
+    selected = null;
+    await load();
+  }
+
   async function delDeck() {
     if (!selected) return;
-    if (!(await confirmDialog(`Delete deck "${selected.name}"? Cards stay in your library.`, 'Delete'))) return;
+    if (getPrefs().confirmDeletes && !(await confirmDialog(`Delete deck "${selected.name}"? Cards stay in your library.`, 'Delete'))) return;
     saveSoon.cancel(selected.id);
     await store().deleteDeck(selected.id);
     selected = null;

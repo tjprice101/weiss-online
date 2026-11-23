@@ -5,8 +5,47 @@ import type { CardInfo, Game } from './game';
 import { closeMenu, getMenuTrigger, installMenus, setMenuTrigger } from './menu';
 import { openDamage, openLevelUp } from './modals';
 
+let refit = () => {};
 export function applyScale() {
   document.documentElement.style.setProperty('--scale', String(lsGet('wom-scale', 1)));
+  refit();
+}
+
+/** Opponent's side is drawn a little smaller so your own cards can be bigger. */
+const OPP_K = 0.75;
+
+/**
+ * Size cards to fill the board. Board height and width grow linearly with card height,
+ * so lay it out at two test sizes, solve for the largest card height that fits, then
+ * apply the user's "card size" setting on top (above 100% the board scrolls).
+ */
+function fitBoard(board: HTMLElement) {
+  if (!board.isConnected || !board.clientHeight) return;
+  const flow = [...board.children].filter((el) => getComputedStyle(el).position !== 'absolute') as HTMLElement[];
+  const sides = flow.filter((el) => el.classList.contains('side'));
+  const set = (ch: number) => {
+    board.style.setProperty('--ch-me', ch + 'px');
+    board.style.setProperty('--ch-opp', ch * OPP_K + 'px');
+  };
+  const measure = (ch: number) => {
+    set(ch);
+    const h = flow.reduce((n, el) => n + el.offsetHeight, 0);
+    const w = Math.max(0, ...sides.map((el) => el.offsetWidth));
+    return [h, w];
+  };
+  const [h1, w1] = measure(100);
+  const [h2, w2] = measure(200);
+  const cs = getComputedStyle(board);
+  const availH = board.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 6;
+  const availW = board.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 8;
+  const ah = (h2 - h1) / 100;
+  const aw = (w2 - w1) / 100;
+  let ch = Math.min(ah > 0 ? (availH - (h1 - 100 * ah)) / ah : 999, aw > 0 ? (availW - (w1 - 100 * aw)) / aw : 999);
+  const scale = Number(lsGet('wom-scale', 1));
+  ch = Math.max(48, Math.min(ch, 420)) * scale;
+  board.classList.toggle('zoomed', scale > 1);
+  set(Math.floor(ch));
+  board.style.setProperty('--board-w', board.clientWidth + 'px');
 }
 
 export function mountGame(app: HTMLElement, game: Game, onLeave: () => void): () => void {
@@ -15,14 +54,18 @@ export function mountGame(app: HTMLElement, game: Game, onLeave: () => void): ()
 
   // ── preview
   const pImg = h('img', { alt: '' }) as HTMLImageElement;
-  const pCap = h('div', { class: 'preview-cap' }, 'Hover over a card to zoom in');
+  const pFrame = h('div', { class: 'preview-img' }, pImg, h('div', { class: 'preview-empty' }, 'Hover over any card to see it here'));
+  const pCap = h('div', { class: 'preview-cap' });
   const pNote = h('div', { class: 'preview-note' });
-  const previewBox = h('div', { class: 'preview' }, h('div', { class: 'preview-img' }, pImg), pCap, pNote);
+  const previewBox = h('div', { class: 'preview' }, pFrame, pCap, pNote);
   const preview = (info: CardInfo | null, note?: string) => {
     if (!info) return;
     if (info.url) pImg.src = info.url;
-    pImg.classList.toggle('landscape', !!info.landscape);
+    pImg.alt = info.name;
+    pFrame.classList.toggle('has-img', !!info.url);
+    pFrame.classList.toggle('landscape', !!info.landscape);
     pCap.textContent = info.name + (info.isClimax ? ' · Climax' : '');
+    pCap.title = pCap.textContent;
     pNote.textContent = note ?? '';
   };
   const ctx: BoardCtx = { game, preview };
@@ -123,12 +166,18 @@ export function mountGame(app: HTMLElement, game: Game, onLeave: () => void): ()
   app.append(root);
 
   const render = () => {
+    const scroll = boardEl.scrollTop;
     renderBoard(boardEl, ctx);
+    fitBoard(boardEl);
+    boardEl.scrollTop = scroll;
     renderLog();
     renderTop();
   };
   const unsub = game.subscribe(render);
   render();
+  refit = () => fitBoard(boardEl);
+  const ro = new ResizeObserver(() => fitBoard(boardEl));
+  ro.observe(boardEl);
   // Handy for debugging from devtools (all of this state is already visible there).
   (window as unknown as { womGame?: Game }).womGame = game;
 
@@ -152,6 +201,8 @@ export function mountGame(app: HTMLElement, game: Game, onLeave: () => void): ()
 
   return () => {
     unsub();
+    ro.disconnect();
+    refit = () => {};
     closeMenu();
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('beforeunload', beforeUnload);
@@ -168,7 +219,7 @@ function openSettings() {
   ) as HTMLSelectElement;
   trig.value = getMenuTrigger();
   trig.onchange = () => setMenuTrigger(trig.value as 'hover' | 'click');
-  const scale = h('input', { type: 'range', min: '0.6', max: '1.4', step: '0.05', value: String(lsGet('wom-scale', 1)) }) as HTMLInputElement;
+  const scale = h('input', { type: 'range', min: '0.6', max: '1.8', step: '0.05', value: String(lsGet('wom-scale', 1)) }) as HTMLInputElement;
   scale.oninput = () => {
     lsSet('wom-scale', Number(scale.value));
     applyScale();
@@ -180,7 +231,7 @@ function openSettings() {
       { class: 'stack' },
       h('label', null, 'Open action menus by'),
       trig,
-      h('label', null, 'Card size'),
+      h('label', null, 'Card size (100% fits the board to the window; larger scrolls)'),
       scale,
     ),
   });

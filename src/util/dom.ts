@@ -113,8 +113,8 @@ export function promptDialog(message: string, initial = '', okLabel = 'OK'): Pro
     const ok = h('button', { class: 'btn primary' }, okLabel);
     const cancel = h('button', { class: 'btn' }, 'Cancel');
     const m = modal({
-      title: message,
-      body: input,
+      title: message.includes('\n') ? 'Confirm' : message,
+      body: message.includes('\n') ? h('div', { class: 'stack' }, h('p', { class: 'pre-line' }, message), input) : input,
       footer: h('div', { class: 'row end' }, cancel, ok),
       onClose: () => resolve(result),
     });

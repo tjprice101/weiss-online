@@ -21,6 +21,8 @@ The mat does **not** enforce rules or script card effects. It assumes both playe
 - **Damage helper:** flips cards one at a time into the Resolution Zone and stops automatically at a card tagged as a climax. Then one click sends them to the Waiting Room (cancelled) or to the Clock.
 - **Drag & drop** everywhere. Shift+drop on a character adds a marker; Shift+drop on the deck puts the card on the bottom.
 - Undo (Ctrl+Z), game log, chat, phase/turn tracker, coin flip, d6, and a solo autosave you can resume.
+- **Cards size themselves to fill the window.** Your opponent's side is drawn slightly smaller so yours can be bigger. Turn controls and both Resolution Zones sit in a column on the left. ⚙ → Card size goes above 100% if you want even bigger cards (the board then scrolls).
+- The sidebar shows a large copy of whatever card you hover.
 
 ### Online play
 - Peer-to-peer over WebRTC using [PeerJS](https://peerjs.com/). The host gets a 6-character room code and an invite link (`?room=CODE`).
@@ -35,9 +37,16 @@ The mat does **not** enforce rules or script card effects. It assumes both playe
 ### Library & deck builder
 - **Upload individual card images** or **import a full deck as a `.zip` of 50 images**. A warning appears if a zip has more or fewer than 50 cards.
 - All cards go into one **card library** shared across your decks, with duplicate images detected automatically.
-- **Deck builder:** click a library card to add a copy, right-click to remove one. Shows a live count against 50, the climax count (max 8), and copies of each name (max 4).
+- **Deck builder:** click a library card to add a copy, Shift+click to add 4, right-click to remove one, Shift+right-click to remove all. **＋1 each shown** adds every card matching the search. **Clear deck** empties a deck; **Delete all decks** removes every deck. Shows a live count against 50, the climax count (max 8), and copies of each name (max 4).
+- Hover any card in the Library or Deck Builder to see it enlarged at the side of the screen.
+- **Bulk actions in the Library:** ☑ Select (or Ctrl/Shift+click) to pick cards, Shift+click for a range, Ctrl+A for everything shown. Then delete, mark as climax / not climax, or add them to a deck (1–4 copies each). **Clean up…** deletes cards not in any deck, everything matching the current filter, or the whole library. Large deletes ask you to type DELETE.
+- Sort by name or upload date, and filter to cards not in any deck.
 - Landscape images are tagged as **climax** automatically; you can toggle this per card.
 - Export any deck back out as a `.zip`.
+
+### Accessibility
+- **Account → Accessibility & display:** larger text and buttons, high contrast, reduce motion (on by default if your system asks for it), turn the hover preview on or off, and skip the confirmation for single deletes.
+- Everything works from the keyboard: Tab moves between cards, Enter opens or adds a card, and focus is always outlined. Shortcuts: in a game **D** draw, **N** next phase, **T** trigger check, **Ctrl+Z** undo. In the Library **S** select, **Ctrl+A** select all, **Delete** removes the selection, **/** searches.
 
 ### Profiles (no server needed)
 - On first visit you create a **profile**: a name and an optional password. Several people can share one browser, and each profile has its **own library, decks, last-used deck and solo autosave**.
