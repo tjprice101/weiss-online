@@ -421,3 +421,18 @@ label { font-size: 12px; color: var(--muted); }
 .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--gold-2); color: #111; font-weight: 700; }
 .check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
 .viewer-tile .tile-actions.show { display: flex; bottom: 6px; right: 6px; }
+
+/* Hover preview for library / deck builder cards */
+.hover-preview {
+  position: fixed; top: 64px; right: 16px; z-index: 150; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  opacity: 0; transform: translateX(12px); transition: opacity .12s, transform .12s;
+}
+.hover-preview.left { right: auto; left: 16px; transform: translateX(-12px); }
+.hover-preview.show { opacity: 1; transform: none; }
+.hover-preview img {
+  display: block; height: min(calc(100vh - 100px), calc(34vw * 88 / 63)); width: auto; max-width: 44vw;
+  border-radius: 12px; background: #0b100d; box-shadow: 0 16px 50px #000d, 0 0 0 1px var(--line);
+}
+.hover-preview.landscape img { height: auto; width: min(44vw, calc((100vh - 100px) * 88 / 63)); }
+.hover-cap { text-align: center; font-size: 13px; font-weight: 600; color: var(--text); text-shadow: 0 1px 3px #000; }
