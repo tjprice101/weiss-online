@@ -43,7 +43,9 @@ export function renderLogin(root: HTMLElement) {
     clear(body);
     const pass = h('input', { class: 'input', type: 'password', placeholder: 'Password', autocomplete: 'current-password' }) as HTMLInputElement;
     const submit = () => go(() => signIn(p.id, pass.value, remember.checked));
-    pass.onkeydown = (e) => e.key === 'Enter' && submit();
+    pass.onkeydown = (e) => {
+      if (e.key === 'Enter') submit();
+    };
     body.append(
       h('h3', null, `Sign in as ${p.name}`),
       pass,

@@ -120,7 +120,10 @@ export function promptDialog(message: string, initial = '', okLabel = 'OK'): Pro
     });
     const submit = () => ((result = input.value), m.close());
     ok.onclick = submit;
-    input.onkeydown = (e) => e.key === 'Enter' && submit();
+    // Block body: an on* handler that returns false cancels the key, so nothing could be typed.
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') submit();
+    };
     cancel.onclick = () => m.close();
     setTimeout(() => (input.focus(), input.select()), 0);
   });
