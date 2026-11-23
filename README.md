@@ -45,10 +45,11 @@ The mat does **not** enforce rules or script card effects. It assumes both playe
 - Landscape images are tagged as **climax** automatically; you can toggle this per card.
 - Export any deck back out as a `.zip`.
 
-### Card translation
-- Hover a card that isn't in English and an English translation of its name, traits and abilities appears under the enlarged card: in games, in the Library and Deck Builder, and in look/search windows.
-- Uses Claude (vision) through **your own Anthropic API key**, entered in **Account → Card translation**. The key stays in your browser and is sent only to Anthropic. Each card image is sent once; the translation is saved in the browser and reused.
-- Choose the model (Claude Opus 5.5 by default, or Sonnet 5.5 / Haiku 5.5 to spend less), and turn off automatic translation to get a **Translate this card** button instead.
+### Card translation (free)
+- Hover a card that isn't in English and a rough English translation appears under the enlarged card: in games, in the Library and Deck Builder, and in look/search windows.
+- **Completely free: no account, no API key, nothing billed.** Card text is read inside your browser with [Tesseract.js](https://github.com/naptha/tesseract.js). It is translated by the browser's built-in on-device translator where available (Chrome), otherwise by the free [MyMemory](https://mymemory.translated.net/) service, which receives only the text read from the card (never the image) and has a daily limit.
+- Machine reading can miss small or stylised text. The **Fan translation** link uses the card code read from the card (e.g. `ND/W67-001`) to find the human translation on Heart of the Cards.
+- Each card is read once and saved in the browser. **Account → Card translation** lets you set up the browser translator, turn off automatic translation (you get a **Translate this card** button instead), turn off the online fallback, and clear saved translations.
 
 ### Accessibility
 - **Account → Accessibility & display:** larger text and buttons, high contrast, reduce motion (on by default if your system asks for it), turn the hover preview on or off, and skip the confirmation for single deletes.

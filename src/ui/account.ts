@@ -1,17 +1,15 @@
 import { changePassword, currentProfile, deleteCurrentProfile, hasPassword, renameProfile, signOut } from '../store';
 import { exportBackup, importBackup } from '../store/backup';
-import { confirmDialog, h, promptDialog, toast } from '../util/dom';
+import { clear, confirmDialog, h, promptDialog, toast } from '../util/dom';
 import { pickFiles } from './uploads';
 import { getPrefs, setPref, type Prefs } from '../util/prefs';
 import {
+  browserTranslatorStatus,
   clearTranslations,
-  getApiKey,
+  enableBrowserTranslator,
   getTranslateSettings,
-  setApiKey,
   setTranslateSettings,
   translationCount,
-  TRANSLATE_MODELS,
-  type TranslateModel,
 } from '../util/translate';
 
 export function renderAccount(root: HTMLElement) {
@@ -84,55 +82,51 @@ export function renderAccount(root: HTMLElement) {
     ),
   );
 
-  // ── card translation (per browser)
+  // ── card translation (free, per browser)
   const tset = getTranslateSettings();
-  const keyIn = h('input', { class: 'input', type: 'password', placeholder: getApiKey() ? 'Key saved (enter a new one to replace it)' : 'sk-ant-…', autocomplete: 'off' }) as HTMLInputElement;
-  const modelSel = h('select', { class: 'input' }, TRANSLATE_MODELS.map((m) => h('option', { value: m.id }, m.label))) as HTMLSelectElement;
-  modelSel.value = tset.model;
-  modelSel.onchange = () => setTranslateSettings({ model: modelSel.value as TranslateModel });
   const autoBox = h('input', { type: 'checkbox', checked: tset.auto }) as HTMLInputElement;
   autoBox.onchange = () => setTranslateSettings({ auto: autoBox.checked });
-  const keyStatus = h('span', { class: 'muted small' });
+  const onlineBox = h('input', { type: 'checkbox', checked: tset.online }) as HTMLInputElement;
+  onlineBox.onchange = () => setTranslateSettings({ online: onlineBox.checked });
+  const browserRow = h('div', { class: 'row' });
+  const drawBrowser = async () => {
+    const st = await browserTranslatorStatus();
+    clear(browserRow);
+    if (st === 'ready') browserRow.append(h('span', { class: 'ok-text' }, '✓ Your browser’s built-in translator is ready (works offline, nothing leaves your computer).'));
+    else if (st === 'needs-download')
+      browserRow.append(
+        h('button', {
+          class: 'btn',
+          onclick: async (e: Event) => {
+            (e.currentTarget as HTMLButtonElement).disabled = true;
+            try {
+              await enableBrowserTranslator();
+              toast('Browser translator ready', 'ok');
+            } catch (err) {
+              toast('Could not set up the browser translator: ' + (err as Error).message, 'error', 6000);
+            }
+            drawBrowser();
+          },
+        }, '⬇ Set up your browser’s free built-in translator'),
+        h('span', { class: 'muted small' }, 'One-time download by your browser. Works offline afterwards.'),
+      );
+    else browserRow.append(h('span', { class: 'muted small' }, 'Your browser has no built-in translator (Chrome has one), so the free online translator below is used.'));
+  };
+  drawBrowser();
   const clearBtn = h('button', { class: 'btn sm' }) as HTMLButtonElement;
   const refreshTr = () => {
-    keyStatus.textContent = getApiKey() ? '✓ API key saved in this browser' : 'No API key saved';
     clearBtn.textContent = `Clear saved translations (${translationCount()})`;
     clearBtn.disabled = !translationCount();
   };
   clearBtn.onclick = () => (clearTranslations(), refreshTr(), toast('Saved translations cleared', 'ok'));
   refreshTr();
   const translation = h('div', { class: 'card-panel stack' },
-    h('h3', null, 'Card translation'),
-    h('p', { class: 'muted' }, 'Hover a card that isn’t in English and an English translation of its name, traits and abilities appears under the enlarged card: in games, in the Library and Deck Builder, and in look/search windows. Each card is translated once and saved in this browser.'),
-    h('p', { class: 'muted small' }, 'This uses Claude through your own Anthropic API key (create one at console.anthropic.com). When a card is translated, its image is sent to Anthropic and the request is billed to your API account. The key is kept only in this browser and is sent only to Anthropic.'),
-    h('label', null, 'Anthropic API key'),
-    h('div', { class: 'row' },
-      keyIn,
-      h('button', {
-        class: 'btn primary',
-        onclick: () => {
-          if (!keyIn.value.trim()) return toast('Paste your API key first', 'warn');
-          setApiKey(keyIn.value);
-          keyIn.value = '';
-          keyIn.placeholder = 'Key saved (enter a new one to replace it)';
-          refreshTr();
-          toast('API key saved', 'ok');
-        },
-      }, 'Save key'),
-      h('button', {
-        class: 'btn danger',
-        onclick: () => {
-          setApiKey('');
-          keyIn.placeholder = 'sk-ant-…';
-          refreshTr();
-          toast('API key removed', 'ok');
-        },
-      }, 'Remove'),
-    ),
-    keyStatus,
-    h('label', null, 'Model'),
-    modelSel,
-    h('label', { class: 'pref-row' }, autoBox, h('span', null, h('b', null, 'Translate automatically on hover'), h('span', { class: 'muted small' }, 'Off: a “Translate this card” button appears instead, so nothing is sent until you click it.'))),
+    h('h3', null, 'Card translation (free)'),
+    h('p', { class: 'muted' }, 'Hover a card that isn’t in English and a rough English translation appears under the enlarged card: in games, the Library, the Deck Builder and look/search windows. Each card is read once and saved in this browser. Free: no account, no key, nothing to pay.'),
+    h('p', { class: 'muted small' }, 'Card text is read inside your browser, so it can miss small or stylised text. For exact wording, use the “Fan translation” link, which finds the card’s code on Heart of the Cards.'),
+    browserRow,
+    h('label', { class: 'pref-row' }, autoBox, h('span', null, h('b', null, 'Translate automatically on hover'), h('span', { class: 'muted small' }, 'Off: a “Translate this card” button appears instead.'))),
+    h('label', { class: 'pref-row' }, onlineBox, h('span', null, h('b', null, 'Use the free online translator when the browser has none'), h('span', { class: 'muted small' }, 'Sends only the text read from the card (not the image) to MyMemory, a free service with a daily limit.'))),
     h('div', { class: 'row' }, clearBtn),
   );
 

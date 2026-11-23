@@ -2,42 +2,43 @@ import { h } from './dom';
 import { lsGet, lsSet } from './misc';
 
 /**
- * Card translation with Claude (vision). Runs entirely in the browser with the user's own
- * Anthropic API key, which stays in this browser's localStorage. Results are cached per card
- * (card ids are image hashes), so each card is only ever sent once.
+ * Free card translation. Nothing here costs money and no account or key is needed:
+ *  1. Tesseract.js reads the card text inside the browser (OCR).
+ *  2. The browser's built-in on-device translator (Chrome's Translator API) turns it into
+ *     English. Where that isn't available, the free MyMemory service is used instead.
+ *  3. The card code (e.g. ND/W67-001) is read too, so you can open the human fan translation.
+ * Results are cached per card (card ids are image hashes), so each card is only read once.
  */
-
-export type TranslateModel = 'claude-opus-5-5' | 'claude-sonnet-5-5' | 'claude-haiku-5-5';
-export const TRANSLATE_MODELS: { id: TranslateModel; label: string }[] = [
-  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (best quality)' },
-  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (faster, cheaper)' },
-  { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 (fastest, cheapest)' },
-];
 
 export interface Translation {
   isEnglish: boolean;
-  language: string;
-  name: string;
-  traits: string[];
-  abilities: string[];
-  flavor: string;
+  original: string;
+  english: string;
+  code: string;
+  via: 'browser' | 'mymemory' | 'none';
   at: number;
 }
 
 interface Settings {
-  model: TranslateModel;
   /** Translate automatically on hover. Off: show a "Translate" button instead. */
   auto: boolean;
+  /** Allow the free online fallback (sends the card text, not the image, to MyMemory). */
+  online: boolean;
 }
 
-const KEY_KEY = 'wom-anthropic-key';
 const SETTINGS_KEY = 'wom-translate';
-const CACHE_KEY = 'wom-translations';
+const CACHE_KEY = 'wom-translations-free';
 
-export const getApiKey = () => lsGet<string>(KEY_KEY, '');
-export const setApiKey = (k: string) => (k ? lsSet(KEY_KEY, k.trim()) : localStorage.removeItem(KEY_KEY));
-export const getTranslateSettings = (): Settings => ({ model: 'claude-opus-5-5', auto: true, ...lsGet<Partial<Settings>>(SETTINGS_KEY, {}) });
+export const getTranslateSettings = (): Settings => ({ auto: true, online: true, ...lsGet<Partial<Settings>>(SETTINGS_KEY, {}) });
 export const setTranslateSettings = (p: Partial<Settings>) => lsSet(SETTINGS_KEY, { ...getTranslateSettings(), ...p });
+
+// The earlier paid version stored an API key and results here; it is no longer used.
+try {
+  localStorage.removeItem('wom-anthropic-key');
+  localStorage.removeItem('wom-translations');
+} catch {
+  /* storage blocked */
+}
 
 let cache: Record<string, Translation> | null = null;
 const loadCache = () => (cache ??= lsGet<Record<string, Translation>>(CACHE_KEY, {}));
@@ -52,28 +53,121 @@ function remember(id: string, t: Translation) {
   lsSet(CACHE_KEY, cache);
 }
 
-const PROMPT = `This image is a trading card, most likely from the Weiss Schwarz card game.
+// ─────────────────────────────── OCR ───────────────────────────────
 
-If every piece of game text on the card is already in English, set is_english to true and leave the other text fields empty.
+type TWorker = Awaited<ReturnType<typeof import('tesseract.js')['createWorker']>>;
+let jpnWorker: Promise<TWorker> | null = null;
+let engWorker: Promise<TWorker> | null = null;
+const getJpn = () => (jpnWorker ??= import('tesseract.js').then((t) => t.createWorker(['jpn', 'eng'])));
+const getEng = () =>
+  (engWorker ??= import('tesseract.js').then(async (t) => {
+    const w = await t.createWorker('eng');
+    await w.setParameters({ tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/-' });
+    return w;
+  }));
 
-Otherwise translate the card into natural English for a player who knows the game:
-- name: the card's name.
-- traits: each trait, in English.
-- abilities: one entry per ability, in order. Keep the ability keywords and game terms players use in English: 【AUTO】, 【CONT】, 【ACT】, ENCORE, BRAINSTORM, BOND, BACKUP, CHANGE, ASSIST, CLOCK, STOCK, MEMORY, WAITING ROOM, CLIMAX, LEVEL, SOUL, POWER, RESOLUTION ZONE. Write costs as [(1)] and keep 【】 brackets.
-- flavor: the flavor text, or empty if there is none.
-- source_language: the language the card is printed in (for example "Japanese").
+/** Crop part of the image (fractions of width/height) and scale it up; small card text reads much better at 2x. */
+async function crop(url: string, x: number, y: number, w: number, hgt: number, scale = 2): Promise<HTMLCanvasElement> {
+  const bmp = await createImageBitmap(await (await fetch(url)).blob());
+  const sx = bmp.width * x;
+  const sy = bmp.height * y;
+  const sw = bmp.width * w;
+  const sh = bmp.height * hgt;
+  const c = document.createElement('canvas');
+  c.width = Math.round(sw * scale);
+  c.height = Math.round(sh * scale);
+  const g = c.getContext('2d')!;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(bmp, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  bmp.close();
+  return c;
+}
 
-Translate only text that is printed on the card. If a part is unreadable, write [unreadable] for that part rather than guessing.`;
+const CJK = /[぀-ヿ㐀-鿿ｦ-ﾟ]/;
+const CODE = /\b[A-Z0-9]{1,5}\/[A-Z0-9]{1,5}-[A-Z]{0,3}\d{1,3}[A-Z]{0,4}\b/;
+
+/** Tidy OCR output: drop junk lines and the spaces Tesseract puts between Japanese characters. */
+function cleanJapanese(text: string): string {
+  return text
+    .split('\n')
+    .map((l) => l.replace(/(?<=[^\x00-\x7f])\s+(?=[^\x00-\x7f])/g, '').trim())
+    .filter((l) => l.length > 1 && CJK.test(l))
+    .join('\n');
+}
+
+// ─────────────────────────────── translation ───────────────────────────────
+
+interface BrowserTranslator {
+  translate(text: string): Promise<string>;
+}
+interface TranslatorStatic {
+  availability(o: { sourceLanguage: string; targetLanguage: string }): Promise<'unavailable' | 'downloadable' | 'downloading' | 'available'>;
+  create(o: { sourceLanguage: string; targetLanguage: string }): Promise<BrowserTranslator>;
+}
+const browserApi = (): TranslatorStatic | undefined => (globalThis as unknown as { Translator?: TranslatorStatic }).Translator;
+let browserTranslator: Promise<BrowserTranslator | null> | null = null;
+
+/** Whether this browser has a free on-device Japanese→English translator, and if it's downloaded yet. */
+export async function browserTranslatorStatus(): Promise<'unsupported' | 'ready' | 'needs-download' | 'unavailable'> {
+  const api = browserApi();
+  if (!api) return 'unsupported';
+  try {
+    const a = await api.availability({ sourceLanguage: 'ja', targetLanguage: 'en' });
+    return a === 'available' ? 'ready' : a === 'unavailable' ? 'unavailable' : 'needs-download';
+  } catch {
+    return 'unavailable';
+  }
+}
+
+/** Download the on-device translator. Must be called from a click (browsers require a user action). */
+export async function enableBrowserTranslator() {
+  const api = browserApi();
+  if (!api) throw new Error('This browser has no built-in translator');
+  browserTranslator = api.create({ sourceLanguage: 'ja', targetLanguage: 'en' });
+  await browserTranslator;
+}
+
+async function viaBrowser(text: string): Promise<string | null> {
+  const api = browserApi();
+  if (!api) return null;
+  if (!browserTranslator) {
+    if ((await browserTranslatorStatus()) !== 'ready') return null;
+    browserTranslator = api.create({ sourceLanguage: 'ja', targetLanguage: 'en' }).catch(() => null);
+  }
+  const t = await browserTranslator;
+  return t ? t.translate(text) : null;
+}
+
+/** MyMemory: free, no key, limited to about 5,000 characters a day per user and 500 per request. */
+async function viaMyMemory(text: string): Promise<string> {
+  const chunks: string[] = [];
+  let cur = '';
+  for (const line of text.split('\n')) {
+    if ((cur + '\n' + line).length > 450 && cur) (chunks.push(cur), (cur = ''));
+    cur = cur ? cur + '\n' + line : line;
+  }
+  if (cur) chunks.push(cur);
+  const out: string[] = [];
+  for (const c of chunks) {
+    const r = await fetch(`https://api.mymemory.translated.net/get?langpair=ja|en&q=${encodeURIComponent(c)}`);
+    const j = (await r.json()) as { responseStatus: number | string; responseData?: { translatedText?: string }; responseDetails?: string };
+    if (Number(j.responseStatus) !== 200) throw new Error(j.responseDetails || 'Free translation service is unavailable right now');
+    out.push(j.responseData?.translatedText ?? '');
+  }
+  return out.join('\n');
+}
+
+// ─────────────────────────────── pipeline ───────────────────────────────
 
 const inflight = new Map<string, Promise<Translation>>();
 
-/** Translate a card image (object URL or http URL). Cached per card id; concurrent calls share one request. */
-export function translateCard(id: string, url: string): Promise<Translation> {
+/** Read and translate a card image. Cached per card id; concurrent calls share one run. */
+export function translateCard(id: string, url: string, landscape = false, progress?: (m: string) => void): Promise<Translation> {
   const hit = cachedTranslation(id);
   if (hit) return Promise.resolve(hit);
   let p = inflight.get(id);
   if (!p) {
-    p = request(url)
+    p = run(url, landscape, progress)
       .then((t) => (remember(id, t), t))
       .finally(() => inflight.delete(id));
     inflight.set(id, p);
@@ -81,84 +175,37 @@ export function translateCard(id: string, url: string): Promise<Translation> {
   return p;
 }
 
-async function imagePayload(url: string): Promise<{ media_type: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; data: string }> {
-  let blob = await (await fetch(url)).blob();
-  const ok = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-  if (!ok.includes(blob.type)) {
-    // Re-encode anything else (e.g. AVIF, BMP) as JPEG.
-    const bmp = await createImageBitmap(blob);
-    const c = document.createElement('canvas');
-    c.width = bmp.width;
-    c.height = bmp.height;
-    c.getContext('2d')!.drawImage(bmp, 0, 0);
-    bmp.close();
-    blob = await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('Could not read image'))), 'image/jpeg', 0.92));
+async function run(url: string, landscape: boolean, progress?: (m: string) => void): Promise<Translation> {
+  progress?.('Reading card text… (the first time downloads the free text reader)');
+  // Name and abilities sit in the lower part of portrait cards; climax (landscape) cards are read whole.
+  const [jpn, eng] = await Promise.all([getJpn(), getEng()]);
+  const textArea = landscape ? await crop(url, 0, 0, 1, 1, 1.5) : await crop(url, 0, 0.5, 1, 0.5, 2);
+  const codeArea = landscape ? await crop(url, 0, 0.85, 1, 0.15, 3) : await crop(url, 0, 0.9, 1, 0.1, 3);
+  const [{ data: textData }, { data: codeData }] = await Promise.all([jpn.recognize(textArea), eng.recognize(codeArea)]);
+  const code = (codeData.text.toUpperCase().replace(/\s+/g, ' ').match(CODE) ?? [''])[0];
+  const original = cleanJapanese(textData.text);
+  if (!original) return { isEnglish: true, original: '', english: '', code, via: 'none', at: Date.now() };
+
+  progress?.('Translating…');
+  let english = await viaBrowser(original).catch(() => null);
+  let via: Translation['via'] = 'browser';
+  if (english == null) {
+    if (!getTranslateSettings().online) {
+      return { isEnglish: false, original, english: '', code, via: 'none', at: Date.now() };
+    }
+    english = await viaMyMemory(original);
+    via = 'mymemory';
   }
-  const data = await new Promise<string>((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(String(r.result).split(',')[1] ?? '');
-    r.onerror = () => rej(r.error);
-    r.readAsDataURL(blob);
-  });
-  return { media_type: blob.type as 'image/jpeg', data };
+  return { isEnglish: false, original, english, code, via, at: Date.now() };
 }
 
-async function request(url: string): Promise<Translation> {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error('Add your Anthropic API key in Account → Card translation');
-  const { model } = getTranslateSettings();
-  // Loaded on first use so the SDK isn't part of the main bundle.
-  const [{ default: Anthropic }, { z }, { betaZodOutputFormat }] = await Promise.all([
-    import('@anthropic-ai/sdk'),
-    import('zod'),
-    import('@anthropic-ai/sdk/helpers/beta/zod'),
-  ]);
-  const Schema = z.object({
-    is_english: z.boolean(),
-    source_language: z.string(),
-    name: z.string(),
-    traits: z.array(z.string()),
-    abilities: z.array(z.string()),
-    flavor: z.string(),
-  });
-  // The key belongs to the person using this browser and never leaves it except to call the API.
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-  const image = await imagePayload(url);
-  try {
-    const res = await client.beta.messages.parse({
-      model,
-      max_tokens: 4000,
-      // A short translation task: low effort keeps hover latency down.
-      output_config: { effort: 'low', format: betaZodOutputFormat(Schema) },
-      // Haiku has no server-side fallback; the others retry a declined request on another model.
-      ...(model === 'claude-haiku-5-5' ? {} : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }),
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', ...image } },
-            { type: 'text', text: PROMPT },
-          ],
-        },
-      ],
-    });
-    if (res.stop_reason === 'refusal') throw new Error('The model declined to translate this card');
-    const out = res.parsed_output;
-    if (!out) throw new Error(res.stop_reason === 'max_tokens' ? 'Translation was cut off' : 'Could not read the translation');
-    return { isEnglish: out.is_english, language: out.source_language, name: out.name, traits: out.traits, abilities: out.abilities, flavor: out.flavor, at: Date.now() };
-  } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError) throw new Error('Your Anthropic API key was rejected. Check it in Account → Card translation.');
-    if (e instanceof Anthropic.PermissionDeniedError) throw new Error('Your API key does not have access to this model.');
-    if (e instanceof Anthropic.RateLimitError) throw new Error('Rate limited by the API. Try again in a moment.');
-    if (e instanceof Anthropic.APIConnectionError) throw new Error('Could not reach the Anthropic API.');
-    if (e instanceof Anthropic.APIError) throw new Error(`Translation failed (${e.status}): ${e.message}`);
-    throw e;
-  }
-}
+/** Free fan translations: search Heart of the Cards for the card code. */
+export const fanTranslationUrl = (code: string) =>
+  `https://www.google.com/search?q=${encodeURIComponent(`site:heartofthecards.com "${code}"`)}`;
 
 /**
  * A translation panel that follows whichever card is being previewed. Call show() on hover;
- * it waits briefly so sweeping the mouse across cards doesn't send every one of them.
+ * it waits briefly so sweeping the mouse across cards doesn't read every one of them.
  */
 export function translationBox(cls = '') {
   const el = h('div', { class: `translation ${cls}`, 'aria-live': 'polite' });
@@ -167,36 +214,39 @@ export function translationBox(cls = '') {
   const render = (t: Translation) => {
     el.replaceChildren();
     if (t.isEnglish) return;
+    const orig = h('p', { class: 'tr-original', hidden: true }, t.original);
     el.append(
-      h('div', { class: 'tr-head' }, `Translated from ${t.language || 'another language'}`),
-      t.name ? h('div', { class: 'tr-name' }, t.name) : '',
-      t.traits.length ? h('div', { class: 'tr-traits' }, t.traits.map((x) => `《${x}》`).join(' ')) : '',
-      ...t.abilities.map((a) => h('p', { class: 'tr-ability' }, a)),
-      t.flavor ? h('p', { class: 'tr-flavor' }, t.flavor) : '',
+      h('div', { class: 'tr-head' }, t.english ? 'Rough machine translation (free)' : 'Japanese text found'),
+      t.english ? h('p', { class: 'tr-english' }, t.english) : h('p', { class: 'tr-status' }, 'Turn on the free online translator or your browser’s translator in Account → Card translation to see English.'),
+      h('div', { class: 'tr-links' },
+        h('button', { class: 'link-btn', onclick: () => (orig.hidden = !orig.hidden) }, 'Show text read from card'),
+        t.code ? h('a', { href: fanTranslationUrl(t.code), target: '_blank', rel: 'noopener noreferrer', title: 'Accurate translations by Weiss Schwarz players' }, `Fan translation for ${t.code} ↗`) : '',
+      ),
+      orig,
     );
   };
-  const run = (id: string, url: string) => {
-    el.replaceChildren(h('div', { class: 'tr-status' }, 'Translating…'));
-    translateCard(id, url).then(
+  const runBox = (id: string, url: string, landscape: boolean) => {
+    const status = h('div', { class: 'tr-status' }, 'Reading card text…');
+    el.replaceChildren(status);
+    translateCard(id, url, landscape, (m) => current === id && (status.textContent = m)).then(
       (t) => current === id && render(t),
-      (e: Error) => current === id && el.replaceChildren(h('div', { class: 'tr-status error' }, e.message)),
+      (e: Error) => current === id && el.replaceChildren(h('div', { class: 'tr-status error' }, 'Translation failed: ' + e.message)),
     );
   };
   return {
     el,
-    show(id: string | undefined, url: string | undefined) {
+    show(id: string | undefined, url: string | undefined, landscape = false) {
       clearTimeout(timer);
       if (!id || !url || id === current) return;
       current = id;
       const hit = cachedTranslation(id);
       if (hit) return render(hit);
       el.replaceChildren();
-      if (!getApiKey()) return;
       if (!getTranslateSettings().auto) {
-        el.append(h('button', { class: 'btn sm', onclick: () => run(id, url) }, '🌐 Translate this card'));
+        el.append(h('button', { class: 'btn sm', onclick: () => runBox(id, url, landscape) }, '🌐 Translate this card'));
         return;
       }
-      timer = window.setTimeout(() => current === id && run(id, url), 450);
+      timer = window.setTimeout(() => current === id && runBox(id, url, landscape), 600);
     },
     clear() {
       clearTimeout(timer);

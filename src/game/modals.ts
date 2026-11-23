@@ -13,11 +13,11 @@ function zoomPanel() {
   const el = h('div', { class: 'zoom-panel' }, img, cap, tr.el);
   return {
     el,
-    show(url: string | undefined, name: string, id?: string) {
+    show(url: string | undefined, name: string, id?: string, landscape = false) {
       if (url) img.src = url;
       img.style.visibility = url ? 'visible' : 'hidden';
       cap.textContent = name;
-      if (url) tr.show(id, url);
+      if (url) tr.show(id, url, landscape);
       else tr.clear();
     },
   };
@@ -97,7 +97,7 @@ export function openZoneViewer(
         selected.delete(c.iid);
         game.move(c.iid, 'hand');
       };
-      tile.onmouseenter = () => zoom.show(inf?.url, inf?.name ?? '', inf?.id);
+      tile.onmouseenter = () => zoom.show(inf?.url, inf?.name ?? '', inf?.id, !!inf?.landscape);
       if (reorderable) {
         tile.ondragstart = (e) => e.dataTransfer!.setData('text/wom-reorder', c.iid);
         tile.ondragover = (e) => {
@@ -222,7 +222,7 @@ export function openOppViewer(ctx: BoardCtx, zone: Zone, markerHost?: string, pe
           ),
         );
       }
-      t.onmouseenter = () => vis && zoom.show(inf?.url, inf?.name ?? '', inf?.id);
+      t.onmouseenter = () => vis && zoom.show(inf?.url, inf?.name ?? '', inf?.id, !!inf?.landscape);
       grid.append(t);
     });
   };

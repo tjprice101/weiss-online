@@ -539,3 +539,8 @@ label { font-size: 12px; color: var(--muted); }
 }
 .hover-preview:has(.hover-tr:not(:empty)) img { height: min(calc(100vh - 100px - 42vh), calc(34vw * 88 / 63)); }
 .hover-preview.landscape:has(.hover-tr:not(:empty)) img { height: auto; width: min(44vw, calc((100vh - 100px - 42vh) * 88 / 63)); }
+.tr-english { margin: 4px 0; padding: 6px 8px; background: #00000040; border-left: 2px solid var(--gold); border-radius: 4px; white-space: pre-line; }
+.tr-original { margin: 4px 0 0; color: var(--muted); white-space: pre-line; font-size: 12px; }
+.tr-links { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; margin-top: 2px; }
+.tr-links a { color: #8fd0ff; }
+.link-btn { background: none; border: 0; padding: 0; color: #8fd0ff; cursor: pointer; font: inherit; text-decoration: underline; }

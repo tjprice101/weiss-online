@@ -34,7 +34,7 @@ const hover = (() => {
     el.classList.toggle('landscape', landscape);
     el.classList.toggle('left', x > innerWidth / 2);
     el.classList.add('show');
-    tr.show(id, src);
+    tr.show(id, src, landscape);
     // The card may be removed (page change, re-render) without a mouseleave.
     clearInterval(timer);
     timer = window.setInterval(() => owner && !owner.isConnected && hide(), 300);
@@ -73,6 +73,6 @@ export function showCardLarge(meta: CardMeta) {
   const tr = translationBox('large-tr');
   store()
     .getImageUrl(meta.id)
-    .then((u) => ((img.src = u), tr.show(meta.id, u)));
+    .then((u) => ((img.src = u), tr.show(meta.id, u, !!meta.landscape)));
   modal({ title: meta.name + (meta.isClimax ? ' (Climax)' : ''), body: h('div', { class: 'large-view' }, h('div', { class: 'center' }, img), tr.el), wide: true });
 }

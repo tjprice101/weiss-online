@@ -69,7 +69,7 @@ export function mountGame(app: HTMLElement, game: Game, onLeave: () => void): ()
     pCap.textContent = info.name + (info.isClimax ? ' · Climax' : '');
     pCap.title = pCap.textContent;
     pNote.textContent = note ?? '';
-    pTr.show(info.id, info.url);
+    pTr.show(info.id, info.url, !!info.landscape);
   };
   const ctx: BoardCtx = { game, preview };
   game.ui.openDamage = (n, fromOpp) => openDamage(ctx, n, fromOpp);
