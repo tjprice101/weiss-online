@@ -85,6 +85,14 @@ onProfileChange(() => {
 });
 
 applyPrefs();
+// Card translation was removed; clear anything it saved.
+for (const k of ['wom-anthropic-key', 'wom-translations', 'wom-translations-free', 'wom-translate']) {
+  try {
+    localStorage.removeItem(k);
+  } catch {
+    /* storage blocked */
+  }
+}
 installMenus();
 restoreSession();
 shownProfile = currentProfile()?.id ?? null;

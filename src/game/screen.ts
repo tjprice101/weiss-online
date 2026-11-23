@@ -4,7 +4,6 @@ import { renderBoard, statusText, type BoardCtx } from './board';
 import type { CardInfo, Game } from './game';
 import { closeMenu, getMenuTrigger, installMenus, setMenuTrigger } from './menu';
 import { openDamage, openLevelUp } from './modals';
-import { translationBox } from '../util/translate';
 
 let refit = () => {};
 export function applyScale() {
@@ -58,8 +57,7 @@ export function mountGame(app: HTMLElement, game: Game, onLeave: () => void): ()
   const pFrame = h('div', { class: 'preview-img' }, pImg, h('div', { class: 'preview-empty' }, 'Hover over any card to see it here'));
   const pCap = h('div', { class: 'preview-cap' });
   const pNote = h('div', { class: 'preview-note' });
-  const pTr = translationBox('preview-tr');
-  const previewBox = h('div', { class: 'preview' }, pFrame, pCap, pNote, pTr.el);
+  const previewBox = h('div', { class: 'preview' }, pFrame, pCap, pNote);
   const preview = (info: CardInfo | null, note?: string) => {
     if (!info) return;
     if (info.url) pImg.src = info.url;
@@ -69,7 +67,6 @@ export function mountGame(app: HTMLElement, game: Game, onLeave: () => void): ()
     pCap.textContent = info.name + (info.isClimax ? ' · Climax' : '');
     pCap.title = pCap.textContent;
     pNote.textContent = note ?? '';
-    pTr.show(info.id, info.url, !!info.landscape);
   };
   const ctx: BoardCtx = { game, preview };
   game.ui.openDamage = (n, fromOpp) => openDamage(ctx, n, fromOpp);

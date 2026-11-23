@@ -45,12 +45,6 @@ The mat does **not** enforce rules or script card effects. It assumes both playe
 - Landscape images are tagged as **climax** automatically; you can toggle this per card.
 - Export any deck back out as a `.zip`.
 
-### Card translation (free)
-- Hover a card that isn't in English and a rough English translation appears under the enlarged card: in games, in the Library and Deck Builder, and in look/search windows.
-- **Completely free: no account, no API key, nothing billed.** Card text is read inside your browser with [Tesseract.js](https://github.com/naptha/tesseract.js). It is translated by the browser's built-in on-device translator where available (Chrome), otherwise by the free [MyMemory](https://mymemory.translated.net/) service, which receives only the text read from the card (never the image) and has a daily limit.
-- Machine reading can miss small or stylised text. The **Fan translation** link uses the card code read from the card (e.g. `ND/W67-001`) to find the human translation on Heart of the Cards.
-- Each card is read once and saved in the browser. **Account → Card translation** lets you set up the browser translator, turn off automatic translation (you get a **Translate this card** button instead), turn off the online fallback, and clear saved translations.
-
 ### Accessibility
 - **Account → Accessibility & display:** larger text and buttons, high contrast, reduce motion (on by default if your system asks for it), turn the hover preview on or off, and skip the confirmation for single deletes.
 - Everything works from the keyboard: Tab moves between cards, Enter opens or adds a card, and focus is always outlined. Shortcuts: in a game **D** draw, **N** next phase, **T** trigger check, **Ctrl+Z** undo. In the Library **S** select, **Ctrl+A** select all, **Delete** removes the selection, **/** searches.

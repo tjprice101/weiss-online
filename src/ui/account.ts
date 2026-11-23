@@ -1,16 +1,8 @@
 import { changePassword, currentProfile, deleteCurrentProfile, hasPassword, renameProfile, signOut } from '../store';
 import { exportBackup, importBackup } from '../store/backup';
-import { clear, confirmDialog, h, promptDialog, toast } from '../util/dom';
+import { confirmDialog, h, promptDialog, toast } from '../util/dom';
 import { pickFiles } from './uploads';
 import { getPrefs, setPref, type Prefs } from '../util/prefs';
-import {
-  browserTranslatorStatus,
-  clearTranslations,
-  enableBrowserTranslator,
-  getTranslateSettings,
-  setTranslateSettings,
-  translationCount,
-} from '../util/translate';
 
 export function renderAccount(root: HTMLElement) {
   const p = currentProfile();
@@ -82,57 +74,9 @@ export function renderAccount(root: HTMLElement) {
     ),
   );
 
-  // ── card translation (free, per browser)
-  const tset = getTranslateSettings();
-  const autoBox = h('input', { type: 'checkbox', checked: tset.auto }) as HTMLInputElement;
-  autoBox.onchange = () => setTranslateSettings({ auto: autoBox.checked });
-  const onlineBox = h('input', { type: 'checkbox', checked: tset.online }) as HTMLInputElement;
-  onlineBox.onchange = () => setTranslateSettings({ online: onlineBox.checked });
-  const browserRow = h('div', { class: 'row' });
-  const drawBrowser = async () => {
-    const st = await browserTranslatorStatus();
-    clear(browserRow);
-    if (st === 'ready') browserRow.append(h('span', { class: 'ok-text' }, '✓ Your browser’s built-in translator is ready (works offline, nothing leaves your computer).'));
-    else if (st === 'needs-download')
-      browserRow.append(
-        h('button', {
-          class: 'btn',
-          onclick: async (e: Event) => {
-            (e.currentTarget as HTMLButtonElement).disabled = true;
-            try {
-              await enableBrowserTranslator();
-              toast('Browser translator ready', 'ok');
-            } catch (err) {
-              toast('Could not set up the browser translator: ' + (err as Error).message, 'error', 6000);
-            }
-            drawBrowser();
-          },
-        }, '⬇ Set up your browser’s free built-in translator'),
-        h('span', { class: 'muted small' }, 'One-time download by your browser. Works offline afterwards.'),
-      );
-    else browserRow.append(h('span', { class: 'muted small' }, 'Your browser has no built-in translator (Chrome has one), so the free online translator below is used.'));
-  };
-  drawBrowser();
-  const clearBtn = h('button', { class: 'btn sm' }) as HTMLButtonElement;
-  const refreshTr = () => {
-    clearBtn.textContent = `Clear saved translations (${translationCount()})`;
-    clearBtn.disabled = !translationCount();
-  };
-  clearBtn.onclick = () => (clearTranslations(), refreshTr(), toast('Saved translations cleared', 'ok'));
-  refreshTr();
-  const translation = h('div', { class: 'card-panel stack' },
-    h('h3', null, 'Card translation (free)'),
-    h('p', { class: 'muted' }, 'Hover a card that isn’t in English and a rough English translation appears under the enlarged card: in games, the Library, the Deck Builder and look/search windows. Each card is read once and saved in this browser. Free: no account, no key, nothing to pay.'),
-    h('p', { class: 'muted small' }, 'Card text is read inside your browser, so it can miss small or stylised text. For exact wording, use the “Fan translation” link, which finds the card’s code on Heart of the Cards.'),
-    browserRow,
-    h('label', { class: 'pref-row' }, autoBox, h('span', null, h('b', null, 'Translate automatically on hover'), h('span', { class: 'muted small' }, 'Off: a “Translate this card” button appears instead.'))),
-    h('label', { class: 'pref-row' }, onlineBox, h('span', null, h('b', null, 'Use the free online translator when the browser has none'), h('span', { class: 'muted small' }, 'Sends only the text read from the card (not the image) to MyMemory, a free service with a daily limit.'))),
-    h('div', { class: 'row' }, clearBtn),
-  );
-
   // ── backup
   const progress = h('div', { class: 'muted' });
-  page.append(accessibility, translation);
+  page.append(accessibility);
   page.append(
     h('div', { class: 'card-panel stack' },
       h('h3', null, 'Backup & move to another device'),
