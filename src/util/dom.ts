@@ -48,6 +48,8 @@ export function toast(msg: string, kind: 'info' | 'warn' | 'error' | 'ok' = 'inf
   return t;
 }
 
+const modalStack: HTMLElement[] = [];
+
 /** Generic modal. Returns a close function. */
 export function modal(opts: {
   title: string;
@@ -71,16 +73,18 @@ export function modal(opts: {
   const close = () => {
     if (closed) return;
     closed = true;
+    modalStack.splice(modalStack.indexOf(back), 1);
     back.remove();
     document.removeEventListener('keydown', onKey);
     opts.onClose?.();
   };
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape' && opts.dismissable !== false && back === document.querySelector('.modal-back:last-of-type')) close();
+    if (e.key === 'Escape' && opts.dismissable !== false && back === modalStack[modalStack.length - 1]) close();
   };
   closeBtn.onclick = close;
   if (opts.dismissable !== false) back.addEventListener('mousedown', (e) => e.target === back && close());
   document.addEventListener('keydown', onKey);
+  modalStack.push(back);
   document.body.append(back);
   return { close, root: box, setTitle: (t) => (titleEl.textContent = t) };
 }

@@ -84,7 +84,9 @@ function cardEl(ctx: BoardCtx, side: Side, c: Inst | PubInst, zone: Zone, withMe
   const el = cardVisual(info, faceUp, `${c.state} ${c.revealed ? 'revealed' : ''}`);
   el.dataset.iid = c.iid;
   el.dataset.zone = zone;
-  if (c.power) el.append(h('span', { class: 'pbadge' }, `${c.power > 0 ? '+' : ''}${c.power}`));
+  const sg = (n: number) => (n > 0 ? '+' : '') + n;
+  const mods = [c.power ? sg(c.power) : '', c.soul ? `Soul ${sg(c.soul)}` : '', c.level ? `Lv ${sg(c.level)}` : ''].filter(Boolean);
+  if (mods.length) el.append(h('span', { class: 'pbadge', title: mods.join(' · ') }, mods.join(' · ')));
   if (c.note) el.append(h('span', { class: 'nbadge', title: c.note }, c.note));
   if (c.revealed && (zone === 'hand' || zone === 'deck' || zone === 'stock')) el.append(h('span', { class: 'rbadge' }, 'REVEALED'));
 
@@ -159,7 +161,7 @@ function myCardMenu(ctx: BoardCtx, c: Inst, zone: Zone): MenuSpec | null {
         ],
       });
     secs.push({
-      title: 'Power / notes',
+      title: 'Power',
       compact: true,
       items: [
         { label: '+500', run: () => game.addPower(c.iid, 500) },
@@ -168,6 +170,25 @@ function myCardMenu(ctx: BoardCtx, c: Inst, zone: Zone): MenuSpec | null {
         { label: '−500', run: () => game.addPower(c.iid, -500) },
         { label: '−1000', run: () => game.addPower(c.iid, -1000) },
         { label: 'Reset', run: () => game.addPower(c.iid, -c.power), disabled: !c.power },
+      ],
+    });
+    secs.push({
+      title: 'Soul / level / notes',
+      compact: true,
+      items: [
+        { label: 'Soul +1', run: () => game.addMod(c.iid, 'soul', 1) },
+        { label: 'Soul −1', run: () => game.addMod(c.iid, 'soul', -1) },
+        { label: 'Level +1', run: () => game.addMod(c.iid, 'level', 1) },
+        { label: 'Level −1', run: () => game.addMod(c.iid, 'level', -1) },
+        {
+          label: 'Reset all',
+          disabled: !c.power && !c.soul && !c.level,
+          run: () => {
+            game.addMod(c.iid, 'power', -c.power);
+            game.addMod(c.iid, 'soul', -(c.soul ?? 0));
+            game.addMod(c.iid, 'level', -(c.level ?? 0));
+          },
+        },
         {
           label: 'Note…',
           run: async () => {
@@ -256,6 +277,7 @@ function zoneMenu(ctx: BoardCtx, zone: Zone): MenuSpec | null {
               { label: 'Top X → Resolution', x: true, run: (x) => game.moveTop('resolution', x) },
               { label: 'Bottom card → Resolution', run: () => game.moveBottom('resolution', 1) },
               { label: 'Bottom X → Resolution', x: true, run: (x) => game.moveBottom('resolution', x) },
+              { label: 'Brainstorm X (flip to Resolution, count climaxes)', x: true, run: (x) => game.brainstorm(x) },
             ],
           },
           {
@@ -419,6 +441,36 @@ function oppCardMenu(ctx: BoardCtx, c: PubInst, zone: Zone): MenuSpec | null {
         run: () => game.remote({ kind: 'state', iid: c.iid, state: s }),
       })),
     });
+  if (isStage(zone)) {
+    const mod = (stat: 'power' | 'soul' | 'level', delta: number, label: string): MenuItem => ({ label, run: () => game.remote({ kind: 'mod', iid: c.iid, stat, delta }) });
+    secs.push({
+      title: 'Opponent card modifiers',
+      compact: true,
+      items: [
+        mod('power', 500, '+500'),
+        mod('power', 1000, '+1000'),
+        mod('power', -500, '−500'),
+        mod('power', -1000, '−1000'),
+        { label: '−X×500', x: true, run: (x) => game.remote({ kind: 'mod', iid: c.iid, stat: 'power', delta: -500 * x }) },
+        mod('soul', 1, 'Soul +1'),
+        mod('soul', -1, 'Soul −1'),
+        mod('level', 1, 'Level +1'),
+        mod('level', -1, 'Level −1'),
+        {
+          label: 'Note…',
+          run: async () => {
+            const n = await promptDialog('Note on opponent card (e.g. "does not stand next stand phase")', c.note, 'Save');
+            if (n !== null) game.remote({ kind: 'note', iid: c.iid, note: n.trim() });
+          },
+        },
+      ],
+    });
+    secs.push({
+      title: 'Move to their slot',
+      compact: true,
+      items: STAGE_ZONES.filter((z) => z !== zone).map((z) => ({ label: STAGE_SHORT[z], run: () => game.remote({ kind: 'move', iid: c.iid, to: z }) })),
+    });
+  }
   secs.push({
     title: 'Send opponent card to…',
     compact: true,
@@ -434,7 +486,8 @@ function oppZoneMenu(ctx: BoardCtx, zone: Zone): MenuSpec | null {
   const n = game.opp?.zones[zone].length ?? 0;
   const title = `${game.oppName}: ${ZONE_LABEL[zone]} (${n})`;
   const view: MenuItem = { label: `View ${ZONE_LABEL[zone]}`, run: () => openOppViewer(ctx, zone), disabled: !n };
-  if (zone === 'deck')
+  if (zone === 'deck') {
+    const peeking = game.opp?.zones.deck.some((c) => c.peek) ?? false;
     return {
       title,
       useX: true,
@@ -442,9 +495,23 @@ function oppZoneMenu(ctx: BoardCtx, zone: Zone): MenuSpec | null {
         { items: [
           { label: 'Deal X damage (they flip cards)', x: true, primary: true, run: (x) => game.remote({ kind: 'damage', n: x }), disabled: game.mode === 'solo' },
         ] },
+        { title: 'Look at their deck', items: [
+          { label: 'Look at top X (hidden from them)', x: true, run: (x) => (game.remote({ kind: 'revealTop', n: x }), setTimeout(() => openOppViewer(ctx, 'deck', undefined, true), 400)) },
+          { label: 'View cards you are looking at', run: () => openOppViewer(ctx, 'deck', undefined, true), disabled: !peeking },
+          { label: 'Done looking (hide them again)', run: () => game.remote({ kind: 'revealTop', n: 0 }), disabled: !peeking },
+        ] },
       ],
     };
-  if (['waiting', 'clock', 'memory', 'level', 'resolution', 'stock'].includes(zone)) return { title, sections: [{ items: [view] }] };
+  }
+  if (zone === 'stock')
+    return {
+      title,
+      sections: [{ items: [
+        { label: 'Bottom of their stock → Waiting Room', run: () => n && game.remote({ kind: 'move', iid: game.opp!.zones.stock[0].iid, to: 'waiting' }), disabled: !n },
+        { label: 'Top of their stock → Waiting Room', run: () => n && game.remote({ kind: 'move', iid: game.opp!.zones.stock[n - 1].iid, to: 'waiting' }), disabled: !n },
+      ] }],
+    };
+  if (['waiting', 'clock', 'memory', 'level', 'resolution'].includes(zone)) return { title, sections: [{ items: [view] }] };
   return null;
 }
 

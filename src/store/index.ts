@@ -1,5 +1,5 @@
 import type { Store } from '../types';
-import { deleteDatabase, setDbName } from '../util/idb';
+import { deleteDatabase } from '../util/idb';
 import { lsGet, lsSet, uid } from '../util/misc';
 import { LocalStore } from './local';
 
@@ -18,11 +18,11 @@ export interface Profile {
 }
 
 const PROFILES_KEY = 'wom-profiles';
-const SESSION_KEY = 'wom-session';
 const LEGACY_DB = 'weiss-online-mat';
+const SESSION_KEY = 'wom-session';
 
 let current: Profile | null = null;
-let currentStore: LocalStore = new LocalStore();
+let currentStore: LocalStore = new LocalStore(LEGACY_DB);
 const listeners = new Set<() => void>();
 
 export const listProfiles = (): Profile[] => lsGet<Profile[]>(PROFILES_KEY, []);
@@ -53,8 +53,9 @@ async function hashPassword(password: string, saltB64?: string) {
 
 function activate(p: Profile | null) {
   current = p;
-  if (p) setDbName(p.db);
-  currentStore = new LocalStore();
+  // In-flight work (e.g. an import) keeps its own store, bound to the old profile's database.
+  currentStore.dispose();
+  currentStore = new LocalStore(p?.db ?? LEGACY_DB);
   listeners.forEach((f) => f());
 }
 

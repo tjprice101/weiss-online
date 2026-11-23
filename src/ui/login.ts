@@ -2,6 +2,7 @@ import { createProfile, hasPassword, listProfiles, signIn, type Profile } from '
 import { importBackup } from '../store/backup';
 import { clear, h, toast } from '../util/dom';
 import { pickFiles } from './uploads';
+import { refresh } from './router';
 
 /** Full-page profile picker shown when nobody is signed in on this browser. */
 export function renderLogin(root: HTMLElement) {
@@ -71,6 +72,7 @@ export function renderLogin(root: HTMLElement) {
           try {
             const r = await importBackup(file, (m) => (t.textContent = m));
             toast(`Restored ${r.cards} cards and ${r.decks} decks`, 'ok', 5000);
+            refresh();
           } catch (e) {
             toast('Backup import failed: ' + (e as Error).message, 'error', 7000);
           } finally {

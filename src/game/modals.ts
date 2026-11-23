@@ -1,4 +1,4 @@
-import { clear, h, modal } from '../util/dom';
+import { clear, h, modal, toast } from '../util/dom';
 import { cardInfoFor, cardVisual, DESTS, faceVisible, type BoardCtx } from './board';
 import { find, STAGE_SHORT, STAGE_ZONES, ZONE_LABEL, type Inst, type PubInst, type Zone } from './state';
 
@@ -56,6 +56,12 @@ export function openZoneViewer(
     // So the first selected card ends up on top of the deck.
     if (to === 'deck' && pos === 'top') ids = ids.reverse();
     game.moveCards(ids, to, pos, faceDown);
+    selected.clear();
+  };
+  const addMarkers = (hostIid: string, faceDown: boolean) => {
+    const ids = selIds();
+    if (!ids.length) return flash();
+    for (const id of ids) game.addMarker(id, hostIid, faceDown);
     selected.clear();
   };
   const flash = () => {
@@ -120,6 +126,18 @@ export function openZoneViewer(
         h('button', { class: 'btn sm', title: ZONE_LABEL[z], onclick: () => { const ids = selIds(); if (!ids.length) return flash(); game.move(ids[0], z); selected.delete(ids[0]); } }, STAGE_SHORT[z]),
       ),
     );
+    const hosts = STAGE_ZONES.map((z) => ({ z, host: game.me.zones[z][0] })).filter((x) => x.host && x.host.iid !== opts.markerHost);
+    const markerRow = hosts.length
+      ? h(
+          'div',
+          { class: 'btn-row' },
+          h('span', { class: 'muted' }, 'Selected → marker under'),
+          hosts.flatMap(({ z, host }) => [
+            h('button', { class: 'btn sm', title: `Face-down marker under ${ZONE_LABEL[z]}`, onclick: () => addMarkers(host.iid, true) }, STAGE_SHORT[z]),
+            h('button', { class: 'btn sm', title: `Face-up marker under ${ZONE_LABEL[z]}`, onclick: () => addMarkers(host.iid, false) }, `${STAGE_SHORT[z]} (face-up)`),
+          ]),
+        )
+      : null;
     const selRow = h(
       'div',
       { class: 'btn-row' },
@@ -153,7 +171,7 @@ export function openZoneViewer(
     }
     if (opts.search) extra.append(h('button', { class: 'btn primary sm', onclick: () => (game.shuffle(), m.close()) }, 'Shuffle deck & close'));
     extra.append(h('div', { class: 'spacer' }), h('button', { class: 'btn sm', onclick: () => m.close() }, 'Close'));
-    foot.append(destRow, selRow, extra);
+    foot.append(destRow, markerRow ?? '', selRow, extra);
   }
 
   const body = h('div', { class: 'viewer' }, h('div', { class: 'viewer-main' }, info, grid), zoom.el);
@@ -173,7 +191,7 @@ export function openZoneViewer(
 
 // ─────────────────────────────── opponent viewer ───────────────────────────────
 
-export function openOppViewer(ctx: BoardCtx, zone: Zone, markerHost?: string) {
+export function openOppViewer(ctx: BoardCtx, zone: Zone, markerHost?: string, peekOnly = false) {
   const { game } = ctx;
   const zoom = zoomPanel();
   const grid = h('div', { class: 'viewer-grid' });
@@ -182,17 +200,30 @@ export function openOppViewer(ctx: BoardCtx, zone: Zone, markerHost?: string) {
     let list: PubInst[] = game.opp?.zones[zone] ?? [];
     if (markerHost) list = list.find((c) => c.iid === markerHost)?.markers ?? [];
     if (TOP_LAST.includes(zone)) list = [...list].reverse();
-    if (!list.length) grid.append(h('div', { class: 'empty' }, 'No cards.'));
-    for (const c of list) {
+    if (peekOnly) list = list.filter((c) => c.peek);
+    if (!list.length) grid.append(h('div', { class: 'empty' }, peekOnly ? 'Not looking at any cards. Waiting for your opponent’s client…' : 'No cards.'));
+    list.forEach((c, i) => {
       const inf = cardInfoFor(game, 'opp', c.cardId);
       const vis = faceVisible('opp', zone, c);
       const t = h('div', { class: 'viewer-tile' }, cardVisual(inf, vis));
+      if (peekOnly) {
+        t.append(h('div', { class: 'tile-idx' }, i === 0 ? 'Top' : `#${i + 1}`));
+        const send = (to: Zone, pos?: 'top' | 'bottom') => game.remote({ kind: 'move', iid: c.iid, to, pos });
+        t.append(
+          h('div', { class: 'tile-actions show' },
+            h('button', { class: 'mini', title: 'Put into their Waiting Room', onclick: () => send('waiting') }, 'WR'),
+            h('button', { class: 'mini', title: 'Put on the bottom of their deck', onclick: () => send('deck', 'bottom') }, 'Btm'),
+            h('button', { class: 'mini', title: 'Put into their Clock', onclick: () => send('clock') }, 'Clk'),
+            h('button', { class: 'mini', title: 'Put into their Stock', onclick: () => send('stock') }, 'Stk'),
+          ),
+        );
+      }
       t.onmouseenter = () => vis && zoom.show(inf?.url, inf?.name ?? '');
       grid.append(t);
-    }
+    });
   };
   const m = modal({
-    title: `${game.oppName}: ${markerHost ? 'Markers' : ZONE_LABEL[zone]}`,
+    title: `${game.oppName}: ${markerHost ? 'Markers' : peekOnly ? 'Top of deck (only you can see these)' : ZONE_LABEL[zone]}`,
     body: h('div', { class: 'viewer' }, h('div', { class: 'viewer-main' }, grid), zoom.el),
     wide: true,
     onClose: () => unsub(),
@@ -204,9 +235,15 @@ export function openOppViewer(ctx: BoardCtx, zone: Zone, markerHost?: string) {
 // ─────────────────────────────── damage ───────────────────────────────
 
 let damageOpen = false;
+/** Damage that arrived while a damage dialog was open. Each instance is resolved separately (its own cancel check). */
+const damageQueue: { n: number; fromOpp: boolean }[] = [];
 export function openDamage(ctx: BoardCtx, n: number, fromOpp: boolean) {
   const { game } = ctx;
-  if (damageOpen) return;
+  if (damageOpen) {
+    damageQueue.push({ n, fromOpp });
+    toast(`Queued: ${n} more damage after this one`, 'info');
+    return;
+  }
   damageOpen = true;
   let total = Math.max(1, n);
   const flipped: string[] = [];
@@ -290,6 +327,8 @@ export function openDamage(ctx: BoardCtx, n: number, fromOpp: boolean) {
       auto = false;
       damageOpen = false;
       unsub();
+      const next = damageQueue.shift();
+      if (next) setTimeout(() => openDamage(ctx, next.n, next.fromOpp), 150);
     },
   });
   const unsub = game.subscribe(render);

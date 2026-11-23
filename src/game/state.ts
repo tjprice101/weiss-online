@@ -29,6 +29,11 @@ export interface Inst {
   revealed: boolean;
   note: string;
   power: number;
+  /** Soul and level modifiers (older saves may lack them; treat undefined as 0). */
+  soul?: number;
+  level?: number;
+  /** Deck card the opponent is currently allowed to look at (still hidden from the owner). */
+  peek?: boolean;
   markers: Inst[];
 }
 
@@ -52,7 +57,7 @@ export function emptyZones<T>(): Record<Zone, T[]> {
 }
 
 export const newInst = (cardId: string): Inst => ({
-  iid: uid(), cardId, state: 'stand', faceDown: false, revealed: false, note: '', power: 0, markers: [],
+  iid: uid(), cardId, state: 'stand', faceDown: false, revealed: false, note: '', power: 0, soul: 0, level: 0, markers: [],
 });
 
 export function buildState(cardIds: string[]): PState {
@@ -61,13 +66,25 @@ export function buildState(cardIds: string[]): PState {
   return s;
 }
 
+/**
+ * Give every deck card a fresh instance id. Call after any shuffle: otherwise the opponent
+ * could follow known cards (e.g. from the Waiting Room) by iid into their new deck positions.
+ */
+export function reIdDeck(s: PState) {
+  for (const c of s.zones.deck) {
+    c.iid = uid();
+    c.revealed = false;
+    c.peek = false;
+  }
+}
+
 /** Zones whose contents are hidden from the opponent. */
 export const HIDDEN_ZONES: Zone[] = ['deck', 'hand', 'stock'];
 /** Zones whose contents are face-down to the owner as well. */
 export const OWNER_HIDDEN_ZONES: Zone[] = ['deck', 'stock'];
 
-export const hiddenToOpp = (zone: Zone, c: { faceDown: boolean; revealed: boolean }) =>
-  (HIDDEN_ZONES.includes(zone) || c.faceDown) && !c.revealed;
+export const hiddenToOpp = (zone: Zone, c: { faceDown: boolean; revealed: boolean; peek?: boolean }) =>
+  (HIDDEN_ZONES.includes(zone) || c.faceDown) && !c.revealed && !c.peek;
 
 function pubInst(c: Inst, hidden: boolean): PubInst {
   return {
@@ -107,6 +124,8 @@ function resetForZone(c: Inst) {
   c.state = 'stand';
   c.note = '';
   c.power = 0;
+  c.soul = 0;
+  c.level = 0;
   c.revealed = false;
 }
 
@@ -140,6 +159,7 @@ export type Pos = 'top' | 'bottom' | number;
  */
 export function put(s: PState, c: Inst, to: Zone, pos: Pos = 'top', faceDown = false) {
   c.revealed = false;
+  c.peek = false;
   c.faceDown = faceDown;
   if (!isStage(to)) resetForZone(c);
   const arr = s.zones[to];

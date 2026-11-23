@@ -1,7 +1,7 @@
 import { store } from '../store';
 import type { CardMeta } from '../types';
 import { clear, confirmDialog, h, promptDialog, toast } from '../util/dom';
-import { cardImg, showCardLarge } from './cardview';
+import { cardImg, forgetUrl, showCardLarge } from './cardview';
 import { dropZone, handleUploads, pickFiles } from './uploads';
 import { navigate } from './router';
 
@@ -92,6 +92,7 @@ export function renderLibrary(root: HTMLElement) {
   async function del(c: CardMeta) {
     if (!(await confirmDialog(`Delete "${c.name}" from your library? Decks using it will lose this card.`, 'Delete'))) return;
     await store().deleteCard(c.id);
+    forgetUrl(c.id);
     cards = cards.filter((x) => x.id !== c.id);
     draw();
   }

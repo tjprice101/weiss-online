@@ -1,5 +1,5 @@
 import type { CardMeta, Deck, PreparedCard, Store } from '../types';
-import { idbAll, idbDel, idbGet, idbPut } from '../util/idb';
+import { Idb } from '../util/idb';
 
 interface CardRow extends CardMeta {
   blob: Blob;
@@ -18,14 +18,24 @@ const toMeta = (r: CardRow): CardMeta => ({
 export class LocalStore implements Store {
   kind = 'local' as const;
   private urls = new Map<string, string>();
+  private db: Idb;
+  constructor(dbName: string) {
+    this.db = new Idb(dbName);
+  }
+
+  /** Revoke every object URL this store handed out (call when switching profile). */
+  dispose() {
+    for (const u of this.urls.values()) URL.revokeObjectURL(u);
+    this.urls.clear();
+  }
 
   async listCards() {
-    const rows = await idbAll<CardRow>('cards');
+    const rows = await this.db.all<CardRow>('cards');
     return rows.map(toMeta).sort((a, b) => a.createdAt - b.createdAt);
   }
 
   async addCard(c: PreparedCard) {
-    const existing = await idbGet<CardRow>('cards', c.hash);
+    const existing = await this.db.get<CardRow>('cards', c.hash);
     if (existing) return toMeta(existing);
     const row: CardRow = {
       id: c.hash,
@@ -36,25 +46,25 @@ export class LocalStore implements Store {
       blob: c.blob,
       createdAt: Date.now(),
     };
-    await idbPut('cards', row);
+    await this.db.put('cards', row);
     return toMeta(row);
   }
 
   async updateCard(id: string, patch: Partial<Pick<CardMeta, 'name' | 'isClimax'>>) {
-    const row = await idbGet<CardRow>('cards', id);
+    const row = await this.db.get<CardRow>('cards', id);
     if (!row) return;
-    await idbPut('cards', { ...row, ...patch });
+    await this.db.put('cards', { ...row, ...patch });
   }
 
   async deleteCard(id: string) {
-    await idbDel('cards', id);
+    await this.db.del('cards', id);
     const u = this.urls.get(id);
     if (u) URL.revokeObjectURL(u);
     this.urls.delete(id);
   }
 
   async getImageBlob(id: string) {
-    const row = await idbGet<CardRow>('cards', id);
+    const row = await this.db.get<CardRow>('cards', id);
     if (!row) throw new Error('Card image not found: ' + id);
     return row.blob;
   }
@@ -71,24 +81,24 @@ export class LocalStore implements Store {
   async getCardsByIds(ids: string[]) {
     const out: CardMeta[] = [];
     for (const id of new Set(ids)) {
-      const r = await idbGet<CardRow>('cards', id);
+      const r = await this.db.get<CardRow>('cards', id);
       if (r) out.push(toMeta(r));
     }
     return out;
   }
 
   async listDecks() {
-    const decks = await idbAll<Deck>('decks');
+    const decks = await this.db.all<Deck>('decks');
     return decks.sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
   async saveDeck(deck: Deck) {
     const d = { ...deck, updatedAt: Date.now() };
-    await idbPut('decks', d);
+    await this.db.put('decks', d);
     return d;
   }
 
   async deleteDeck(id: string) {
-    await idbDel('decks', id);
+    await this.db.del('decks', id);
   }
 }

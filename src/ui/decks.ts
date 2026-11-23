@@ -34,17 +34,39 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
   const list = h('div', { class: 'deck-list' });
   const editor = h('div', { class: 'deck-editor' });
 
-  const saveSoon = debounce(async (d: Deck) => {
-    try {
-      const saved = await store().saveDeck(d);
-      d.updatedAt = saved.updatedAt;
-      drawList();
-    } catch (e) {
-      toast('Save failed: ' + (e as Error).message, 'error');
-    }
-  }, 400);
+  // One debounced save per deck, so switching decks quickly never drops a pending edit.
+  const s0 = store();
+  const pending = new Map<string, ReturnType<typeof debounce<(d: Deck) => void>>>();
+  const inflight = new Set<Promise<unknown>>();
+  const saveSoon = Object.assign(
+    (d: Deck) => {
+      let fn = pending.get(d.id);
+      if (!fn) {
+        fn = debounce((deck: Deck) => {
+          pending.delete(deck.id);
+          const p = s0
+            .saveDeck(deck)
+            .then((saved) => {
+              deck.updatedAt = saved.updatedAt;
+              drawList();
+            })
+            .catch((e) => toast('Save failed: ' + (e as Error).message, 'error'))
+            .finally(() => inflight.delete(p));
+          inflight.add(p);
+        }, 400);
+        pending.set(d.id, fn);
+      }
+      fn(d);
+    },
+    {
+      flush: () => [...pending.values()].forEach((f) => f.flush()),
+      cancel: (id: string) => pending.delete(id),
+    },
+  );
 
   async function load(selectId?: string) {
+    saveSoon.flush();
+    await Promise.all(inflight);
     const s = store();
     [decks, library] = await Promise.all([s.listDecks(), s.listCards()]);
     for (const m of library) metas.set(m.id, m);
@@ -248,6 +270,7 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
   async function delDeck() {
     if (!selected) return;
     if (!(await confirmDialog(`Delete deck "${selected.name}"? Cards stay in your library.`, 'Delete'))) return;
+    saveSoon.cancel(selected.id);
     await store().deleteDeck(selected.id);
     selected = null;
     await load();

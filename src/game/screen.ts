@@ -129,6 +129,8 @@ export function mountGame(app: HTMLElement, game: Game, onLeave: () => void): ()
   };
   const unsub = game.subscribe(render);
   render();
+  // Handy for debugging from devtools (all of this state is already visible there).
+  (window as unknown as { womGame?: Game }).womGame = game;
 
   const onKey = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement;

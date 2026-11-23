@@ -3,7 +3,7 @@ import { profileKey } from '../store';
 import { debounce, lsSet, randomPick, shuffleInPlace } from '../util/misc';
 import { Net, type NetStatus } from './net';
 import {
-  STAGE_ZONES, ZONE_LABEL, buildState, find, hiddenToOpp, isStage, put, take, toPub,
+  ALL_ZONES, STAGE_ZONES, ZONE_LABEL, buildState, reIdDeck, find, hiddenToOpp, isStage, put, take, toPub,
   type CardState, type Found, type PState, type Pos, type PubState, type Zone,
 } from './state';
 
@@ -20,6 +20,9 @@ export interface Meta {
   turn: Role;
   phase: number;
   turnNo: number;
+  /** Change counter + who made the change, so simultaneous edits converge (host wins ties). */
+  rev?: number;
+  by?: Role;
 }
 export const PHASES = ['Stand', 'Draw', 'Clock', 'Main', 'Climax', 'Attack', 'Encore', 'End'];
 
@@ -33,7 +36,10 @@ export interface LogEntry {
 export type RemoteOp =
   | { kind: 'move'; iid: string; to: Zone; pos?: 'top' | 'bottom' }
   | { kind: 'state'; iid: string; state: CardState }
-  | { kind: 'damage'; n: number };
+  | { kind: 'damage'; n: number }
+  | { kind: 'mod'; iid: string; stat: 'power' | 'soul' | 'level'; delta: number }
+  | { kind: 'note'; iid: string; note: string }
+  | { kind: 'revealTop'; n: number };
 
 interface MoveRec {
   from: string;
@@ -95,7 +101,7 @@ export class Game {
     } else {
       this.me = buildState(this.deckCardIds);
       this.drawOpening();
-      this.autosave();
+      if (this.mode === 'solo') this.autosave();
     }
   }
 
@@ -118,6 +124,8 @@ export class Game {
   })();
 
   private autosave = debounce(() => {
+    // Only solo games can be resumed, so don't let online games overwrite the solo save.
+    if (this.mode !== 'solo') return;
     const save: SavedGame = {
       deckName: this.deckName,
       deckCardIds: this.deckCardIds,
@@ -144,7 +152,14 @@ export class Game {
   /** Run a mutation of my state with undo + log + sync. Return false to abort (state is restored). */
   act(fn: (s: PState) => string | null | undefined | false): boolean {
     const snap = structuredClone(this.me);
-    const desc = fn(this.me);
+    let desc: string | null | undefined | false;
+    try {
+      desc = fn(this.me);
+    } catch (e) {
+      console.error(e);
+      this.me = snap;
+      return false;
+    }
     if (desc === false) {
       this.me = snap;
       return false;
@@ -290,10 +305,11 @@ export class Game {
       const f = find(s, iid);
       if (!f) return false;
       const arr = f.host ? f.host.markers : s.zones[f.zone];
+      const target = beforeIid ? arr.findIndex((x) => x.iid === beforeIid) : -1;
       const [c] = arr.splice(f.index, 1);
-      const idx = beforeIid ? arr.findIndex((x) => x.iid === beforeIid) : -1;
-      if (idx < 0) arr.push(c);
-      else arr.splice(idx, 0, c);
+      if (target < 0) arr.push(c);
+      // Dragging rightwards drops the card after the target, leftwards before it.
+      else arr.splice(target, 0, c);
       return null;
     });
   }
@@ -323,7 +339,7 @@ export class Game {
   shuffle() {
     this.act((s) => {
       shuffleInPlace(s.zones.deck);
-      s.zones.deck.forEach((c) => (c.revealed = false));
+      reIdDeck(s);
       return `Shuffled deck (${s.zones.deck.length} cards)`;
     });
   }
@@ -341,6 +357,7 @@ export class Game {
       }
       wr.forEach((c) => ((c.state = 'stand'), (c.revealed = false), (c.faceDown = false)));
       s.zones.deck.push(...shuffleInPlace(wr));
+      reIdDeck(s);
       const top = s.zones.deck[0];
       let pt = '';
       if (top) {
@@ -495,12 +512,27 @@ export class Game {
     });
   }
   addPower(iid: string, delta: number) {
+    this.addMod(iid, 'power', delta);
+  }
+  /** Change a power / soul / level modifier. `by` prefixes the log when the opponent did it. */
+  addMod(iid: string, stat: 'power' | 'soul' | 'level', delta: number, by = '') {
+    if (!delta) return;
     this.act((s) => {
       const f = find(s, iid);
       if (!f) return false;
-      f.inst.power += delta;
-      return `“${this.cardName(f.inst.cardId)}” power ${delta > 0 ? '+' : ''}${delta} (now ${f.inst.power >= 0 ? '+' : ''}${f.inst.power})`;
+      const v = (f.inst[stat] ?? 0) + delta;
+      f.inst[stat] = v;
+      const sign = (n: number) => (n > 0 ? '+' : '') + n;
+      return `${by}“${this.cardName(f.inst.cardId)}” ${stat} ${sign(delta)} (now ${sign(v)})`;
     });
+  }
+
+  /** Brainstorm: flip the top X into the Resolution zone and log how many are climaxes. */
+  brainstorm(x: number) {
+    const ids = this.me.zones.deck.slice(0, x).map((c) => c.iid);
+    if (!ids.length) return toast('Your deck is empty. Refresh it from the deck menu.', 'warn');
+    const cx = ids.filter((id) => this.myCards.get(find(this.me, id)!.inst.cardId)?.isClimax).length;
+    this.moveCards(ids, 'resolution', 'top', false, `Brainstorm ${x}: ${cx} climax${cx === 1 ? '' : 'es'}`);
   }
 
   addMarker(iid: string, hostIid: string, faceDown = true) {
@@ -512,7 +544,7 @@ export class Game {
       const wasHidden = hiddenToOpp(f.zone, f.inst);
       const from = ZONE_LABEL[f.zone];
       const t = take(s, iid)!;
-      Object.assign(t.inst, { state: 'stand', note: '', power: 0, revealed: false, faceDown });
+      Object.assign(t.inst, { state: 'stand', note: '', power: 0, soul: 0, level: 0, revealed: false, faceDown });
       const host = find(s, hostIid)!.inst;
       host.markers.push(t.inst);
       const nm = wasHidden && faceDown ? 'a card' : `“${this.cardName(t.inst.cardId)}”`;
@@ -556,7 +588,7 @@ export class Game {
   }
 
   setMeta(patch: Partial<Meta>, log?: string) {
-    this.meta = { ...this.meta, ...patch };
+    this.meta = { ...this.meta, ...patch, rev: (this.meta.rev ?? 0) + 1, by: this.role };
     this.net?.send({ t: 'meta', meta: this.meta });
     if (log) this.addLog('sys', log);
     this.autosave();
@@ -591,12 +623,15 @@ export class Game {
 
   private handleRemote(op: RemoteOp) {
     const by = `(${this.oppName}) `;
+    if (!op || typeof op !== 'object') return;
     if (op.kind === 'move') {
+      if (!ALL_ZONES.includes(op.to) || (op.pos != null && op.pos !== 'top' && op.pos !== 'bottom')) return;
       this.act((s) => {
         const r = this.moveRaw(s, op.iid, op.to, op.pos ?? 'top');
         return r ? by + this.fmt([r]) : false;
       });
     } else if (op.kind === 'state') {
+      if (!['stand', 'rest', 'reverse'].includes(op.state)) return;
       this.act((s) => {
         const f = find(s, op.iid);
         if (!f) return false;
@@ -604,8 +639,32 @@ export class Game {
         return `${by}set “${this.cardName(f.inst.cardId)}” to ${op.state}`;
       });
     } else if (op.kind === 'damage') {
+      if (!(op.n >= 1 && op.n <= 50)) return;
       toast(`${this.oppName} deals you ${op.n} damage`, 'warn');
       this.ui.openDamage?.(op.n, true);
+    } else if (op.kind === 'mod') {
+      if (!['power', 'soul', 'level'].includes(op.stat) || !Number.isFinite(op.delta)) return;
+      this.addMod(op.iid, op.stat, op.delta, by);
+    } else if (op.kind === 'note') {
+      this.act((s) => {
+        const f = find(s, op.iid);
+        if (!f) return false;
+        f.inst.note = String(op.note ?? '').slice(0, 200);
+        return f.inst.note ? `${by}note on “${this.cardName(f.inst.cardId)}”: ${f.inst.note}` : `${by}cleared the note on “${this.cardName(f.inst.cardId)}”`;
+      });
+    } else if (op.kind === 'revealTop') {
+      const n = Math.max(0, Math.min(50, Math.floor(op.n) || 0));
+      this.act((s) => {
+        if (!n) {
+          let k = 0;
+          for (const c of s.zones.deck) if (c.peek) ((c.peek = false), k++);
+          return k ? `${by}finished looking at your deck` : false;
+        }
+        const top = s.zones.deck.slice(0, n);
+        if (!top.length) return false;
+        for (const c of top) c.peek = true;
+        return `${by}looks at the top ${top.length} card(s) of your deck`;
+      });
     }
   }
 
@@ -633,7 +692,7 @@ export class Game {
       cards: [...this.myCards.values()].map(({ id, name, landscape, isClimax }) => ({ id, name, landscape, isClimax })),
     });
     net.send({ t: 'state', pub: toPub(this.me) });
-    if (this.role === 'host') net.send({ t: 'meta', meta: this.meta });
+    if (this.role === 'host') net.send({ t: 'meta', meta: this.meta, force: true });
     for (const c of this.myCards.values()) {
       try {
         const blob = await (await fetch(c.url)).blob();
@@ -671,11 +730,19 @@ export class Game {
         this.opp = m.pub;
         this.emit();
         break;
-      case 'meta':
-        this.meta = m.meta;
-        this.autosave();
-        this.emit();
+      case 'meta': {
+        const mine = this.meta.rev ?? 0;
+        const theirs = m.meta?.rev ?? 0;
+        if (m.force || theirs > mine || (theirs === mine && m.meta?.by === 'host')) {
+          this.meta = m.meta;
+          this.autosave();
+          this.emit();
+        } else if (this.role === 'host') {
+          // We won the race: re-send ours so the guest converges.
+          this.net?.send({ t: 'meta', meta: this.meta });
+        }
         break;
+      }
       case 'log':
         this.log.push({ who: m.sys ? 'sys' : 'opp', text: String(m.text), t: Date.now(), chat: !!m.chat });
         this.emit();

@@ -1,34 +1,14 @@
 const DB_VERSION = 1;
 export type StoreName = 'cards' | 'decks';
 
-let dbName = 'weiss-online-mat';
-let dbPromise: Promise<IDBDatabase> | null = null;
+/** One open connection per database name (each profile has its own database). */
+const conns = new Map<string, Promise<IDBDatabase>>();
 
-/** Switch to another profile's database. */
-export function setDbName(name: string) {
-  if (name === dbName) return;
-  dbPromise?.then((d) => d.close()).catch(() => {});
-  dbPromise = null;
-  dbName = name;
-}
-
-export function deleteDatabase(name: string): Promise<void> {
-  if (name === dbName) {
-    dbPromise?.then((d) => d.close()).catch(() => {});
-    dbPromise = null;
-  }
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.deleteDatabase(name);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-    req.onblocked = () => resolve();
-  });
-}
-
-function db(): Promise<IDBDatabase> {
-  if (!dbPromise) {
-    dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open(dbName, DB_VERSION);
+function open(name: string): Promise<IDBDatabase> {
+  let p = conns.get(name);
+  if (!p) {
+    p = new Promise((resolve, reject) => {
+      const req = indexedDB.open(name, DB_VERSION);
       req.onupgradeneeded = () => {
         const d = req.result;
         if (!d.objectStoreNames.contains('cards')) d.createObjectStore('cards', { keyPath: 'id' });
@@ -37,8 +17,24 @@ function db(): Promise<IDBDatabase> {
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
+    conns.set(name, p);
   }
-  return dbPromise;
+  return p;
+}
+
+export function closeDatabase(name: string) {
+  conns.get(name)?.then((d) => d.close()).catch(() => {});
+  conns.delete(name);
+}
+
+export function deleteDatabase(name: string): Promise<void> {
+  closeDatabase(name);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(name);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => resolve();
+  });
 }
 
 function wrap<T>(req: IDBRequest<T>): Promise<T> {
@@ -48,19 +44,23 @@ function wrap<T>(req: IDBRequest<T>): Promise<T> {
   });
 }
 
-export async function idbAll<T>(store: StoreName): Promise<T[]> {
-  const d = await db();
-  return wrap(d.transaction(store).objectStore(store).getAll()) as Promise<T[]>;
-}
-export async function idbGet<T>(store: StoreName, key: string): Promise<T | undefined> {
-  const d = await db();
-  return wrap(d.transaction(store).objectStore(store).get(key)) as Promise<T | undefined>;
-}
-export async function idbPut<T>(store: StoreName, value: T): Promise<void> {
-  const d = await db();
-  await wrap(d.transaction(store, 'readwrite').objectStore(store).put(value));
-}
-export async function idbDel(store: StoreName, key: string): Promise<void> {
-  const d = await db();
-  await wrap(d.transaction(store, 'readwrite').objectStore(store).delete(key));
+/** Typed access to one database. Bound to a name so in-flight work never leaks into another profile. */
+export class Idb {
+  constructor(readonly name: string) {}
+  async all<T>(store: StoreName): Promise<T[]> {
+    const d = await open(this.name);
+    return wrap(d.transaction(store).objectStore(store).getAll()) as Promise<T[]>;
+  }
+  async get<T>(store: StoreName, key: string): Promise<T | undefined> {
+    const d = await open(this.name);
+    return wrap(d.transaction(store).objectStore(store).get(key)) as Promise<T | undefined>;
+  }
+  async put<T>(store: StoreName, value: T): Promise<void> {
+    const d = await open(this.name);
+    await wrap(d.transaction(store, 'readwrite').objectStore(store).put(value));
+  }
+  async del(store: StoreName, key: string): Promise<void> {
+    const d = await open(this.name);
+    await wrap(d.transaction(store, 'readwrite').objectStore(store).delete(key));
+  }
 }

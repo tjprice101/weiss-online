@@ -24,6 +24,9 @@ export function cardImg(meta: Pick<CardMeta, 'id' | 'name' | 'landscape'>, cls =
 export function clearUrlCache() {
   urlCache.clear();
 }
+export function forgetUrl(id: string) {
+  urlCache.delete(id);
+}
 
 export function showCardLarge(meta: CardMeta) {
   const img = h('img', { alt: meta.name, class: 'large-img' }) as HTMLImageElement;

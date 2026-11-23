@@ -88,12 +88,18 @@ export function renderPlay(root: HTMLElement) {
   }
 
   async function start(mode: 'solo' | 'host' | 'guest') {
+    if (mode === 'guest' && codeIn.value.trim().length < 4) return toast('Enter the room code', 'warn');
     busy(true);
+    let game: Game | null = null;
+    let started = false;
     try {
       const p = await prepare();
       if (!p) return;
-      const game = new Game({ mode, myName: p.name, deckName: p.deck.name, deckCardIds: p.ids, myCards: p.cards });
-      if (mode === 'solo') return startGameImpl(game);
+      game = new Game({ mode, myName: p.name, deckName: p.deck.name, deckCardIds: p.ids, myCards: p.cards });
+      if (mode === 'solo') {
+        started = true;
+        return startGameImpl(game);
+      }
       const net = new Net();
       game.attachNet(net);
       if (mode === 'host') {
@@ -109,18 +115,16 @@ export function renderPlay(root: HTMLElement) {
         game.addLog('sys', `Room created. Share code ${net.code} with your opponent.`, { send: false });
       } else {
         const code = codeIn.value.trim();
-        if (code.length < 4) {
-          toast('Enter the room code', 'warn');
-          return;
-        }
         toast('Connecting…', 'info', 2000);
         await net.join(code);
       }
+      started = true;
       startGameImpl(game);
     } catch (e) {
       console.error(e);
       toast((e as Error).message || 'Could not start the game', 'error', 7000);
     } finally {
+      if (!started) game?.destroy();
       busy(false);
     }
   }

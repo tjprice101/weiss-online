@@ -10,14 +10,14 @@ The mat does **not** enforce rules or script card effects. It assumes both playe
 - All zones: Deck, Hand, Waiting Room, Clock (7 slots), Level, Stock, Memory, Climax Zone, a **Resolution Zone** for each player, and 5 stage slots (3 center, 2 back).
 - Card states: **stand / rest / reverse**, face-down cards, **markers** under characters, power modifiers and free-text notes.
 - **Hover menus** on every zone and card, with an **X counter** (−/+, mouse wheel, or number keys) for "up to X" effects:
-  - **Deck:** draw 1 or X · look at top X · search deck · reveal top · trigger check · top X / bottom card / bottom X → Resolution · top X → Waiting Room / Stock / Clock / Memory / Level / bottom · take X damage · shuffle · refresh
+  - **Deck:** draw 1 or X · look at top X · search deck · reveal top · trigger check · **brainstorm X** (flips to Resolution and logs the climax count) · top X / bottom card / bottom X → Resolution · top X → Waiting Room / Stock / Clock / Memory / Level / bottom · take X damage · shuffle · refresh
   - **Hand:** play to any stage slot · climax · resolution (events and counters) · clock & draw 2 · reveal · mulligan
-  - **Stage card:** stand / rest / reverse · front / side / direct attack (rests the card and does the trigger check) · power ± · notes · encore (3, X or free) · markers from deck top · move or swap slots · send anywhere
+  - **Stage card:** stand / rest / reverse · front / side / direct attack (rests the card and does the trigger check) · power ± · **soul ± · level ±** · notes · encore (3, X or free) · markers from deck top · move or swap slots · send anywhere
   - **Resolution:** single card or all → Stock / Waiting Room / Clock / Hand / deck bottom / stage
   - **Stock:** pay 1, 2, 3 or X · top → hand · bottom → Waiting Room · look
   - **Clock:** level up (picker for the first 7) · heal 1 or X
   - **Waiting Room:** view and search · top → hand · refresh
-- **Look / search viewer:** select cards (click order is kept), send them anywhere, drag to reorder, then choose where the rest go (top, bottom, Waiting Room, stock, clock, shuffle). Optionally reveal them to your opponent.
+- **Look / search viewer:** select cards (click order is kept), send them anywhere (including **as markers under a character**), drag to reorder, then choose where the rest go (top, bottom, Waiting Room, stock, clock, shuffle). Optionally reveal them to your opponent.
 - **Damage helper:** flips cards one at a time into the Resolution Zone and stops automatically at a card tagged as a climax. Then one click sends them to the Waiting Room (cancelled) or to the Clock.
 - **Drag & drop** everywhere. Shift+drop on a character adds a marker; Shift+drop on the deck puts the card on the bottom.
 - Undo (Ctrl+Z), game log, chat, phase/turn tracker, coin flip, d6, and a solo autosave you can resume.
@@ -26,7 +26,11 @@ The mat does **not** enforce rules or script card effects. It assumes both playe
 - Peer-to-peer over WebRTC using [PeerJS](https://peerjs.com/). The host gets a 6-character room code and an invite link (`?room=CODE`).
 - No game server to run. Card images are sent directly to your opponent when you connect.
 - Hidden information stays hidden: your deck, hand and stock are sent only as card backs unless you reveal them.
-- You can act on your opponent's cards (reverse, rest, send to the Waiting Room, and so on) and deal damage to them. Their client applies the change and logs it.
+- You can act on your opponent's cards and deal damage to them. Their client applies the change and logs it:
+  - **Their characters:** stand / rest / reverse, power ±, soul ±, level ±, add a note (e.g. "doesn't stand next turn"), move to another of their slots, or send to hand / Waiting Room / Stock / Clock / Memory / deck top or bottom.
+  - **Their stock:** send the top or bottom card to the Waiting Room.
+  - **Their deck:** look at the top X. Only you see the cards; their owner doesn't. Then send any of them to their Waiting Room, Clock, Stock or deck bottom.
+- Deck shuffles give every card a new id, so the network data never reveals deck order.
 
 ### Library & deck builder
 - **Upload individual card images** or **import a full deck as a `.zip` of 50 images**. A warning appears if a zip has more or fewer than 50 cards.
