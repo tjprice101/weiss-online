@@ -1,10 +1,11 @@
 import './style.css';
-import { cloudEnabled, currentUser, initAuth, onAuthChange } from './store';
+import { currentProfile, onProfileChange, restoreSession } from './store';
 import { h } from './util/dom';
-import { navigate, onNavigate, register, refresh, setContentRoot, currentScreen, type Screen } from './ui/router';
+import { navigate, onNavigate, register, setContentRoot, type Screen } from './ui/router';
 import { renderLibrary } from './ui/library';
 import { renderDecks } from './ui/decks';
 import { renderAccount } from './ui/account';
+import { renderLogin } from './ui/login';
 import { renderPlay, setStartGame } from './ui/play';
 import { clearUrlCache } from './ui/cardview';
 import { mountGame } from './game/screen';
@@ -42,15 +43,16 @@ function shell() {
 }
 
 function updateUserBadge() {
-  const u = currentUser();
-  userBadge.textContent = u ? `☁ ${u.email}` : cloudEnabled ? 'Sign in to sync' : '💾 Saved in this browser';
-  userBadge.title = u ? 'Signed in: data saved to your account' : cloudEnabled ? 'Sign in to save your data to the cloud' : 'Data is saved in this browser';
+  const p = currentProfile();
+  userBadge.textContent = p ? `👤 ${p.name}` : '';
+  userBadge.title = 'Profile saved in this browser. Click to manage it or switch profiles';
 }
 
 onNavigate((s) => navBtns.forEach((b, k) => b.classList.toggle('active', k === s)));
 
 let leaveGame: (() => void) | null = null;
 function showShell(screen: Screen = 'play') {
+  if (!currentProfile()) return renderLogin(app);
   app.innerHTML = '';
   app.append(shell());
   setContentRoot(content);
@@ -67,14 +69,21 @@ setStartGame((game) => {
   });
 });
 
-onAuthChange(() => {
+let shownProfile: string | null = null;
+onProfileChange(() => {
+  const id = currentProfile()?.id ?? null;
+  if (id === shownProfile) {
+    updateUserBadge();
+    return;
+  }
+  shownProfile = id;
   clearUrlCache();
-  updateUserBadge();
-  if (!leaveGame) refresh();
+  leaveGame?.();
+  leaveGame = null;
+  showShell('play');
 });
 
 installMenus();
-initAuth().finally(() => {
-  if (!leaveGame) showShell(currentScreen());
-});
+restoreSession();
+shownProfile = currentProfile()?.id ?? null;
 showShell('play');

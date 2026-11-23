@@ -1,8 +1,8 @@
-import { displayName, store } from '../store';
+import { displayName, profileKey, renameProfile, store } from '../store';
 import { deckTotal, DECK_SIZE, type CardMeta, type Deck } from '../types';
 import { clear, h, toast } from '../util/dom';
 import { lsGet } from '../util/misc';
-import { AUTOSAVE_KEY, Game, type CardInfo, type SavedGame } from '../game/game';
+import { autosaveKey, Game, type CardInfo, type SavedGame } from '../game/game';
 import { Net, randomRoomCode } from '../game/net';
 import { deckWarnings } from './decks';
 import { navigate } from './router';
@@ -34,7 +34,13 @@ export function renderPlay(root: HTMLElement) {
   let decks: Deck[] = [];
   const metas = new Map<string, CardMeta>();
   const nameIn = h('input', { class: 'input', value: displayName(), placeholder: 'Your name', maxlength: 40 }) as HTMLInputElement;
-  nameIn.onchange = () => localStorage.setItem('wom-name', nameIn.value.trim());
+  nameIn.onchange = () => {
+    try {
+      renameProfile(nameIn.value);
+    } catch (e) {
+      toast((e as Error).message, 'warn');
+    }
+  };
   const deckSel = h('select', { class: 'input' }) as HTMLSelectElement;
   const deckInfo = h('div', { class: 'deck-info' });
   const codeIn = h('input', { class: 'input code-input', placeholder: 'ROOM CODE', value: roomParam, maxlength: 6 }) as HTMLInputElement;
@@ -57,7 +63,7 @@ export function renderPlay(root: HTMLElement) {
     );
   };
   deckSel.onchange = () => {
-    localStorage.setItem('wom-last-deck', deckSel.value);
+    localStorage.setItem(profileKey('wom-last-deck'), deckSel.value);
     drawDeckInfo();
   };
 
@@ -75,7 +81,6 @@ export function renderPlay(root: HTMLElement) {
       return null;
     }
     const name = nameIn.value.trim() || 'Player';
-    localStorage.setItem('wom-name', name);
     const cards = await loadCards(ids);
     const playable = ids.filter((id) => cards.has(id));
     if (playable.length < ids.length) toast(`${ids.length - playable.length} card(s) are missing from the library and were skipped`, 'warn');
@@ -140,7 +145,7 @@ export function renderPlay(root: HTMLElement) {
     }
   }
 
-  const save = lsGet<SavedGame | null>(AUTOSAVE_KEY, null);
+  const save = lsGet<SavedGame | null>(autosaveKey(), null);
   if (save?.me) {
     resumeBox.append(
       h('div', { class: 'card-panel resume' },
@@ -194,7 +199,7 @@ export function renderPlay(root: HTMLElement) {
     }
     clear(deckSel);
     for (const d of decks) deckSel.append(h('option', { value: d.id }, `${d.name} (${deckTotal(d)})`));
-    const last = localStorage.getItem('wom-last-deck');
+    const last = localStorage.getItem(profileKey('wom-last-deck'));
     if (last && decks.some((d) => d.id === last)) deckSel.value = last;
     drawDeckInfo();
   })();

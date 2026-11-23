@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.119.2",
     "fflate": "^0.8.3",
     "peerjs": "^1.5.5"
   },

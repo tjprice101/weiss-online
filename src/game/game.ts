@@ -1,4 +1,5 @@
 import { toast } from '../util/dom';
+import { profileKey } from '../store';
 import { debounce, lsSet, randomPick, shuffleInPlace } from '../util/misc';
 import { Net, type NetStatus } from './net';
 import {
@@ -49,7 +50,7 @@ export interface SavedGame {
   log: LogEntry[];
   savedAt: number;
 }
-export const AUTOSAVE_KEY = 'wom-autosave';
+export const autosaveKey = () => profileKey('wom-autosave');
 
 export class Game {
   mode: 'solo' | 'host' | 'guest';
@@ -94,6 +95,7 @@ export class Game {
     } else {
       this.me = buildState(this.deckCardIds);
       this.drawOpening();
+      this.autosave();
     }
   }
 
@@ -124,7 +126,7 @@ export class Game {
       log: this.log.slice(-150),
       savedAt: Date.now(),
     };
-    lsSet(AUTOSAVE_KEY, save);
+    lsSet(autosaveKey(), save);
   }, 800);
 
   private changed() {

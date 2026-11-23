@@ -1,4 +1,4 @@
-import { store, cloudEnabled } from '../store';
+import { store } from '../store';
 import type { CardMeta } from '../types';
 import { clear, confirmDialog, h, promptDialog, toast } from '../util/dom';
 import { cardImg, showCardLarge } from './cardview';
@@ -6,7 +6,6 @@ import { dropZone, handleUploads, pickFiles } from './uploads';
 import { navigate } from './router';
 
 export function renderLibrary(root: HTMLElement) {
-  let tab: 'mine' | 'community' = 'mine';
   let query = '';
   let filter: 'all' | 'climax' | 'other' = 'all';
   let cards: CardMeta[] = [];
@@ -25,24 +24,12 @@ export function renderLibrary(root: HTMLElement) {
   ) as HTMLSelectElement;
   filterSel.onchange = () => ((filter = filterSel.value as typeof filter), draw());
 
-  const tabs = h('div', { class: 'tabs' });
-  const drawTabs = () => {
-    clear(tabs);
-    tabs.append(
-      h('button', { class: `tab ${tab === 'mine' ? 'active' : ''}`, onclick: () => ((tab = 'mine'), load()) }, 'My Library'),
-      cloudEnabled && store().kind === 'cloud'
-        ? h('button', { class: `tab ${tab === 'community' ? 'active' : ''}`, onclick: () => ((tab = 'community'), load()) }, 'Community')
-        : '',
-    );
-  };
-
   async function load() {
-    drawTabs();
     loading = true;
     draw();
     try {
       const s = store();
-      cards = tab === 'mine' ? await s.listCards() : (await s.listCommunityCards?.(query)) ?? [];
+      cards = await s.listCards();
     } catch (e) {
       toast('Could not load cards: ' + (e as Error).message, 'error');
       cards = [];
@@ -65,9 +52,7 @@ export function renderLibrary(root: HTMLElement) {
         h(
           'div',
           { class: 'empty' },
-          tab === 'mine'
-            ? h('div', null, h('p', null, 'Your library is empty.'), h('p', { class: 'muted' }, 'Upload card images, or import a deck as a .zip of 50 images. You can also drag files anywhere onto this page.'))
-            : 'No community cards yet.',
+          h('div', null, h('p', null, 'Your library is empty.'), h('p', { class: 'muted' }, 'Upload card images, or import a deck as a .zip of 50 images. You can also drag files anywhere onto this page.')),
         ),
       );
     }
@@ -75,16 +60,13 @@ export function renderLibrary(root: HTMLElement) {
   }
 
   function tile(c: CardMeta) {
-    const mine = tab === 'mine';
-    const actions = mine
-      ? h(
+    const actions = h(
           'div',
           { class: 'tile-actions' },
           h('button', { class: 'mini', title: 'Rename', onclick: (e: Event) => (e.stopPropagation(), rename(c)) }, '✎'),
           h('button', { class: `mini ${c.isClimax ? 'on' : ''}`, title: 'Toggle climax', onclick: (e: Event) => (e.stopPropagation(), toggleClimax(c)) }, 'CX'),
           h('button', { class: 'mini danger', title: 'Delete', onclick: (e: Event) => (e.stopPropagation(), del(c)) }, '🗑'),
-        )
-      : null;
+        );
     return h(
       'div',
       { class: 'tile', onclick: () => showCardLarge(c), title: c.name },
@@ -117,10 +99,7 @@ export function renderLibrary(root: HTMLElement) {
   async function upload(files: File[]) {
     if (!files.length) return;
     const r = await handleUploads(files);
-    if (r.cards.length) {
-      tab = 'mine';
-      await load();
-    }
+    if (r.cards.length) await load();
   }
 
   const toolbar = h(
@@ -143,13 +122,11 @@ export function renderLibrary(root: HTMLElement) {
       { class: 'muted' },
       'Every card you upload is kept here and can be reused in any deck. A .zip import adds its images here and also creates a deck. Landscape images are tagged as climax cards automatically; click CX to change that.',
     ),
-    tabs,
     toolbar,
     grid,
   );
   root.append(page);
   const undrop = dropZone(page, upload);
-  search.addEventListener('keydown', (e) => e.key === 'Enter' && tab === 'community' && load());
   load();
   return () => undrop();
 }

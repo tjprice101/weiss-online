@@ -1,69 +1,137 @@
-import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import type { Store } from '../types';
+import { deleteDatabase, setDbName } from '../util/idb';
+import { lsGet, lsSet, uid } from '../util/misc';
 import { LocalStore } from './local';
-import { CloudStore } from './cloud';
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+/**
+ * Browser-local profiles. Each profile has its own IndexedDB database (library + decks)
+ * and its own per-profile settings. Passwords are hashed with PBKDF2 and only keep
+ * other people using the same browser out of your profile; they are not encryption.
+ */
+export interface Profile {
+  id: string;
+  name: string;
+  db: string;
+  salt?: string;
+  hash?: string;
+  createdAt: number;
+}
 
-export const supabase: SupabaseClient | null = url && key ? createClient(url, key) : null;
-export const cloudEnabled = !!supabase;
+const PROFILES_KEY = 'wom-profiles';
+const SESSION_KEY = 'wom-session';
+const LEGACY_DB = 'weiss-online-mat';
 
-export const localStore = new LocalStore();
-let current: Store = localStore;
-let user: User | null = null;
+let current: Profile | null = null;
+let currentStore: LocalStore = new LocalStore();
 const listeners = new Set<() => void>();
 
-export const store = () => current;
-export const currentUser = () => user;
-export function onAuthChange(fn: () => void) {
+export const listProfiles = (): Profile[] => lsGet<Profile[]>(PROFILES_KEY, []);
+const saveProfiles = (p: Profile[]) => lsSet(PROFILES_KEY, p);
+
+export const store = (): Store => currentStore;
+export const currentProfile = () => current;
+export const displayName = () => current?.name ?? '';
+export const hasPassword = (p: Profile) => !!p.hash;
+
+export function onProfileChange(fn: () => void) {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
 
-function apply(u: User | null) {
-  const changed = (u?.id ?? null) !== (user?.id ?? null);
-  user = u;
-  if (changed) {
-    current = u && supabase ? new CloudStore(supabase, u.id) : localStore;
-    listeners.forEach((f) => f());
-  }
+/** localStorage key scoped to the signed-in profile. */
+export function profileKey(key: string) {
+  return current ? `${key}:${current.id}` : key;
 }
 
-export async function initAuth() {
-  if (!supabase) return;
-  const { data } = await supabase.auth.getSession();
-  apply(data.session?.user ?? null);
-  supabase.auth.onAuthStateChange((_e, session) => apply(session?.user ?? null));
+async function hashPassword(password: string, saltB64?: string) {
+  const salt = saltB64 ? Uint8Array.from(atob(saltB64), (c) => c.charCodeAt(0)) : crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 150_000, hash: 'SHA-256' }, key, 256);
+  const b64 = (a: Uint8Array) => btoa(String.fromCharCode(...a));
+  return { salt: b64(salt), hash: b64(new Uint8Array(bits)) };
 }
 
-export function displayName(): string {
-  const n = user?.user_metadata?.display_name as string | undefined;
-  return n || localStorage.getItem('wom-name') || '';
+function activate(p: Profile | null) {
+  current = p;
+  if (p) setDbName(p.db);
+  currentStore = new LocalStore();
+  listeners.forEach((f) => f());
 }
 
-/** Copy every local card + deck into the signed-in cloud account, remapping card ids. */
-export async function migrateLocalToCloud(progress: (msg: string) => void) {
-  if (current.kind !== 'cloud') throw new Error('Sign in first');
-  const cloud = current;
-  const cards = await localStore.listCards();
-  const map = new Map<string, string>();
-  let i = 0;
-  for (const c of cards) {
-    progress(`Uploading card ${++i}/${cards.length}…`);
-    const blob = await localStore.getImageBlob(c.id);
-    const m = await cloud.addCard({ blob, name: c.name, hash: c.hash, landscape: c.landscape, isClimax: c.isClimax });
-    map.set(c.id, m.id);
+function setSession(id: string | null, remember: boolean) {
+  localStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
+  if (id) (remember ? localStorage : sessionStorage).setItem(SESSION_KEY, id);
+}
+
+/** Restore the remembered profile on page load. */
+export function restoreSession() {
+  const id = sessionStorage.getItem(SESSION_KEY) ?? localStorage.getItem(SESSION_KEY);
+  const p = listProfiles().find((x) => x.id === id) ?? null;
+  if (p) activate(p);
+}
+
+export async function createProfile(name: string, password: string, remember: boolean): Promise<Profile> {
+  name = name.trim();
+  if (!name) throw new Error('Enter a name');
+  const all = listProfiles();
+  if (all.some((p) => p.name.toLowerCase() === name.toLowerCase())) throw new Error('A profile with that name already exists in this browser');
+  const id = uid(12);
+  // The first profile adopts the database used before profiles existed, so no data is lost.
+  const db = all.length === 0 ? LEGACY_DB : `${LEGACY_DB}:${id}`;
+  const p: Profile = { id, name, db, createdAt: Date.now(), ...(password ? await hashPassword(password) : {}) };
+  saveProfiles([...all, p]);
+  setSession(id, remember);
+  activate(p);
+  return p;
+}
+
+export async function signIn(id: string, password: string, remember: boolean) {
+  const p = listProfiles().find((x) => x.id === id);
+  if (!p) throw new Error('Profile not found');
+  if (p.hash) {
+    const { hash } = await hashPassword(password, p.salt);
+    if (hash !== p.hash) throw new Error('Wrong password');
   }
-  const decks = await localStore.listDecks();
-  for (const d of decks) {
-    progress(`Saving deck "${d.name}"…`);
-    await cloud.saveDeck({
-      id: crypto.randomUUID(),
-      name: d.name,
-      updatedAt: Date.now(),
-      cards: d.cards.filter((e) => map.has(e.cardId)).map((e) => ({ cardId: map.get(e.cardId)!, count: e.count })),
-    });
+  setSession(id, remember);
+  activate(p);
+}
+
+export function signOut() {
+  setSession(null, false);
+  activate(null);
+}
+
+function updateCurrent(patch: Partial<Profile>) {
+  if (!current) throw new Error('Not signed in');
+  const next = { ...current, ...patch };
+  for (const k of Object.keys(patch) as (keyof Profile)[]) if (patch[k] === undefined) delete next[k];
+  saveProfiles(listProfiles().map((p) => (p.id === next.id ? next : p)));
+  current = next;
+  listeners.forEach((f) => f());
+}
+
+export function renameProfile(name: string) {
+  name = name.trim();
+  if (!name) throw new Error('Enter a name');
+  if (listProfiles().some((p) => p.id !== current?.id && p.name.toLowerCase() === name.toLowerCase())) throw new Error('Another profile already uses that name');
+  updateCurrent({ name });
+}
+
+export async function changePassword(oldPassword: string, newPassword: string) {
+  if (!current) throw new Error('Not signed in');
+  if (current.hash) {
+    const { hash } = await hashPassword(oldPassword, current.salt);
+    if (hash !== current.hash) throw new Error('Current password is wrong');
   }
-  return { cards: cards.length, decks: decks.length };
+  updateCurrent(newPassword ? await hashPassword(newPassword) : { salt: undefined, hash: undefined });
+}
+
+export async function deleteCurrentProfile() {
+  if (!current) return;
+  const p = current;
+  saveProfiles(listProfiles().filter((x) => x.id !== p.id));
+  for (const k of Object.keys(localStorage)) if (k.endsWith(':' + p.id)) localStorage.removeItem(k);
+  signOut();
+  await deleteDatabase(p.db);
 }

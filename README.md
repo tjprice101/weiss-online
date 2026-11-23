@@ -34,7 +34,13 @@ The mat does **not** enforce rules or script card effects. It assumes both playe
 - **Deck builder:** click a library card to add a copy, right-click to remove one. Shows a live count against 50, the climax count (max 8), and copies of each name (max 4).
 - Landscape images are tagged as **climax** automatically; you can toggle this per card.
 - Export any deck back out as a `.zip`.
-- Data is saved in your browser (IndexedDB) by default. With Supabase configured you also get **accounts, cloud saves on every device, and a community card library**.
+
+### Profiles (no server needed)
+- On first visit you create a **profile**: a name and an optional password. Several people can share one browser, and each profile has its **own library, decks, last-used deck and solo autosave**.
+- Choose **Keep me signed in** to skip the sign-in screen next time on that device.
+- Everything is stored in the browser (IndexedDB plus localStorage). Nothing is uploaded.
+- The password is hashed with PBKDF2 and stops other people on the same browser from opening your profile. It does **not** encrypt your data.
+- **Account → Export backup** downloads a `.zip` of every card image and deck in the profile. Import it on another device or browser (or choose **Create from backup** on the sign-in screen) to move your data. Clearing browser data deletes profiles, so keep a backup.
 
 ## Run locally
 
@@ -43,19 +49,6 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # production build in dist/
 ```
-
-## Enable accounts and cloud saves (optional, free)
-
-1. Create a free project at <https://supabase.com>.
-2. In **SQL Editor**, paste and run [`supabase/schema.sql`](supabase/schema.sql). It creates the `cards` and `decks` tables, row-level security, and a public `cards` storage bucket.
-3. In **Authentication → URL Configuration**, set **Site URL** to your deployed URL (for example `https://<you>.github.io/weiss-online-mat/`). Add it, and `http://localhost:5173`, to **Redirect URLs**.
-4. Get the **Project URL** and the **anon public key** from **Project Settings → API**:
-   - Local: copy `.env.example` to `.env` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
-   - GitHub Pages: add both as **repository secrets** (Settings → Secrets and variables → Actions) with the same names, then re-run the deploy workflow.
-
-The anon key is designed to be public. Access is protected by the row-level security policies in the schema.
-
-After signing in, use **Account → Copy local library & decks** to upload anything you created before you had an account.
 
 ## Deploying (GitHub Pages)
 
@@ -69,7 +62,7 @@ PeerJS uses public STUN servers, which works for most home networks. Players on 
 ```
 
 ## Tech
-Vite + TypeScript with no framework. [PeerJS](https://peerjs.com/) for networking, [fflate](https://github.com/101arrowz/fflate) for zip files, [supabase-js](https://supabase.com/docs/reference/javascript) for optional accounts.
+Vite + TypeScript with no framework. [PeerJS](https://peerjs.com/) for networking, [fflate](https://github.com/101arrowz/fflate) for zip files. No backend: the site is fully static.
 
 ## Disclaimer
 This is an unofficial fan-made tool and is not affiliated with Bushiroad. No card images are included; players upload their own.

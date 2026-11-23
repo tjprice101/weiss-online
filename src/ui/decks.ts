@@ -26,10 +26,8 @@ export function deckWarnings(deck: Deck, metas: Map<string, CardMeta>): string[]
 export function renderDecks(root: HTMLElement, arg?: unknown) {
   let decks: Deck[] = [];
   let library: CardMeta[] = [];
-  let community: CardMeta[] = [];
   const metas = new Map<string, CardMeta>();
   let selected: Deck | null = null;
-  let pickerTab: 'mine' | 'community' = 'mine';
   let pickerQuery = '';
   let pickerFilter: 'all' | 'climax' | 'other' = 'all';
 
@@ -170,14 +168,14 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
     const search = h('input', { class: 'input', placeholder: 'Search library…', type: 'search', value: pickerQuery }) as HTMLInputElement;
     const drawPicker = () => {
       clear(pickerGrid);
-      const src = pickerTab === 'mine' ? library : community;
+      const src = library;
       const q = pickerQuery.trim().toLowerCase();
       const shown = src.filter(
         (c) =>
           (!q || c.name.toLowerCase().includes(q)) &&
           (pickerFilter === 'all' || (pickerFilter === 'climax' ? c.isClimax : !c.isClimax)),
       );
-      if (!shown.length) pickerGrid.append(h('p', { class: 'muted' }, pickerTab === 'mine' ? 'No cards. Upload some images first.' : 'No community cards found.'));
+      if (!shown.length) pickerGrid.append(h('p', { class: 'muted' }, 'No cards. Upload some images first.'));
       for (const c of shown) {
         const n = countOf(c.id);
         const t = h(
@@ -197,13 +195,6 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
       }
     };
     search.oninput = () => ((pickerQuery = search.value), drawPicker());
-    search.onkeydown = async (ev) => {
-      if (ev.key === 'Enter' && pickerTab === 'community') {
-        community = (await store().listCommunityCards?.(pickerQuery)) ?? [];
-        for (const m of community) metas.set(m.id, m);
-        drawPicker();
-      }
-    };
     const filterSel = h(
       'select',
       { class: 'input narrow' },
@@ -217,22 +208,7 @@ export function renderDecks(root: HTMLElement, arg?: unknown) {
     const pickerTabs = h(
       'div',
       { class: 'tabs' },
-      h('button', { class: `tab ${pickerTab === 'mine' ? 'active' : ''}`, onclick: () => ((pickerTab = 'mine'), drawEditor()) }, 'My Library'),
-      store().listCommunityCards
-        ? h(
-            'button',
-            {
-              class: `tab ${pickerTab === 'community' ? 'active' : ''}`,
-              onclick: async () => {
-                pickerTab = 'community';
-                community = (await store().listCommunityCards?.(pickerQuery)) ?? [];
-                for (const m of community) metas.set(m.id, m);
-                drawEditor();
-              },
-            },
-            'Community',
-          )
-        : null,
+      h('span', { class: 'tab active' }, 'My Library'),
       h('div', { class: 'spacer' }),
       search,
       filterSel,

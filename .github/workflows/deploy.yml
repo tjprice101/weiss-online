@@ -27,9 +27,7 @@ jobs:
       - run: npm run build
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
-          # Optional — add these as repository secrets to enable accounts + cloud saves.
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # Optional TURN relay for strict networks (repository secret).
           VITE_ICE_SERVERS: ${{ secrets.VITE_ICE_SERVERS }}
       - uses: actions/upload-pages-artifact@v3
         with:

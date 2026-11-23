@@ -5,7 +5,6 @@ export interface CardMeta {
   isClimax: boolean;
   /** Image is wider than tall (climax cards usually are). Rendered rotated in portrait slots. */
   landscape: boolean;
-  owner?: string;
   createdAt: number;
 }
 
@@ -30,19 +29,18 @@ export interface PreparedCard {
 }
 
 export interface Store {
-  kind: 'local' | 'cloud';
+  kind: 'local';
   listCards(): Promise<CardMeta[]>;
   addCard(card: PreparedCard): Promise<CardMeta>;
   updateCard(id: string, patch: Partial<Pick<CardMeta, 'name' | 'isClimax'>>): Promise<void>;
   deleteCard(id: string): Promise<void>;
   getImageUrl(id: string): Promise<string>;
   getImageBlob(id: string): Promise<Blob>;
-  /** Resolve metadata for any card ids (including community cards in cloud mode). */
+  /** Resolve metadata for a set of card ids. */
   getCardsByIds(ids: string[]): Promise<CardMeta[]>;
   listDecks(): Promise<Deck[]>;
   saveDeck(deck: Deck): Promise<Deck>;
   deleteDeck(id: string): Promise<void>;
-  listCommunityCards?(query: string): Promise<CardMeta[]>;
 }
 
 export const DECK_SIZE = 50;

@@ -1,13 +1,34 @@
-const DB_NAME = 'weiss-online-mat';
 const DB_VERSION = 1;
 export type StoreName = 'cards' | 'decks';
 
+let dbName = 'weiss-online-mat';
 let dbPromise: Promise<IDBDatabase> | null = null;
+
+/** Switch to another profile's database. */
+export function setDbName(name: string) {
+  if (name === dbName) return;
+  dbPromise?.then((d) => d.close()).catch(() => {});
+  dbPromise = null;
+  dbName = name;
+}
+
+export function deleteDatabase(name: string): Promise<void> {
+  if (name === dbName) {
+    dbPromise?.then((d) => d.close()).catch(() => {});
+    dbPromise = null;
+  }
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(name);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => resolve();
+  });
+}
 
 function db(): Promise<IDBDatabase> {
   if (!dbPromise) {
     dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      const req = indexedDB.open(dbName, DB_VERSION);
       req.onupgradeneeded = () => {
         const d = req.result;
         if (!d.objectStoreNames.contains('cards')) d.createObjectStore('cards', { keyPath: 'id' });
