@@ -18,6 +18,7 @@ export interface Profile {
 }
 
 const PROFILES_KEY = 'wom-profiles';
+// Kept from before the app was renamed to Weiss Online: changing it would orphan existing data.
 const LEGACY_DB = 'weiss-online-mat';
 const SESSION_KEY = 'wom-session';
 

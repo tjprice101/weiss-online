@@ -15,7 +15,7 @@ export function renderLogin(root: HTMLElement) {
     'div',
     { class: 'login-page' },
     h('div', { class: 'login-box card-panel' },
-      h('div', { class: 'brand login-brand' }, h('span', { class: 'logo' }), 'Weiss Online Mat'),
+      h('div', { class: 'brand login-brand' }, h('span', { class: 'logo' }), 'Weiss Online'),
       h('p', { class: 'muted' }, 'Profiles live in this browser. Each one has its own card library, decks and saved game. Nothing is uploaded anywhere.'),
       body,
     ),

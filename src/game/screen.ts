@@ -142,7 +142,7 @@ export function mountGame(app: HTMLElement, game: Game, onLeave: () => void): ()
   const topbar = h(
     'header',
     { class: 'game-top' },
-    h('div', { class: 'brand' }, 'Weiss Online Mat'),
+    h('div', { class: 'brand' }, 'Weiss Online'),
     topInfo,
     h('div', { class: 'spacer' }),
     h('button', { class: 'btn sm', title: 'Undo (Ctrl+Z)', onclick: () => game.undo() }, '↶ Undo'),

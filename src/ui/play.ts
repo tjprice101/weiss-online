@@ -176,7 +176,7 @@ export function renderPlay(root: HTMLElement) {
     'div',
     { class: 'page play-page' },
     h('div', { class: 'hero' },
-      h('h1', null, 'Weiss Online Mat'),
+      h('h1', null, 'Weiss Online'),
       h('p', { class: 'muted' }, 'A digital playmat for players who know their cards. Upload a deck of card images, open a room, and play. Every zone has hover actions for drawing, milling, looking at the top X, triggers, damage, and the rest.'),
     ),
     h('div', { class: 'play-grid' },

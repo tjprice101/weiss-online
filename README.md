@@ -1,4 +1,4 @@
-# Weiss Online Mat
+# Weiss Online
 
 A browser-based digital playmat for **Weiss Schwarz**. Upload your deck as card images, open a room, and play against a friend online.
 

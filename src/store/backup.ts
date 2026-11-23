@@ -5,7 +5,8 @@ import { store } from './index';
 const MANIFEST = 'weiss-mat-backup.json';
 
 interface Manifest {
-  app: 'weiss-online-mat';
+  /** 'weiss-online-mat' in backups made before the rename. */
+  app: 'weiss-online' | 'weiss-online-mat';
   version: 1;
   profile: string;
   exportedAt: number;
@@ -29,7 +30,7 @@ export async function exportBackup(profileName: string, progress?: (msg: string)
     files[file] = new Uint8Array(await blob.arrayBuffer());
     entries.push({ ...c, file });
   }
-  const manifest: Manifest = { app: 'weiss-online-mat', version: 1, profile: profileName, exportedAt: Date.now(), cards: entries, decks: await s.listDecks() };
+  const manifest: Manifest = { app: 'weiss-online', version: 1, profile: profileName, exportedAt: Date.now(), cards: entries, decks: await s.listDecks() };
   files[MANIFEST] = strToU8(JSON.stringify(manifest, null, 1));
   return new Blob([zipSync(files, { level: 0 }) as BlobPart], { type: 'application/zip' });
 }
@@ -38,9 +39,9 @@ export async function exportBackup(profileName: string, progress?: (msg: string)
 export async function importBackup(file: File, progress?: (msg: string) => void) {
   const zip = unzipSync(new Uint8Array(await file.arrayBuffer()));
   const raw = zip[MANIFEST];
-  if (!raw) throw new Error('This is not a Weiss Online Mat backup (no ' + MANIFEST + ' inside)');
+  if (!raw) throw new Error('This is not a Weiss Online backup (no ' + MANIFEST + ' inside)');
   const m = JSON.parse(strFromU8(raw)) as Manifest;
-  if (m.app !== 'weiss-online-mat') throw new Error('Unrecognised backup file');
+  if (m.app !== 'weiss-online' && m.app !== 'weiss-online-mat') throw new Error('Unrecognised backup file');
   const s = store();
   const idMap = new Map<string, string>();
   let i = 0;

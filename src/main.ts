@@ -38,7 +38,7 @@ function shell() {
   return h(
     'div',
     { class: 'shell' },
-    h('header', { class: 'app-head' }, h('div', { class: 'brand' }, h('span', { class: 'logo' }), 'Weiss Online Mat'), nav, h('div', { class: 'spacer' }), userBadge),
+    h('header', { class: 'app-head' }, h('div', { class: 'brand' }, h('span', { class: 'logo' }), 'Weiss Online'), nav, h('div', { class: 'spacer' }), userBadge),
     content,
   );
 }
